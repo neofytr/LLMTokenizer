@@ -20,7 +20,7 @@ dyn_arr_t *dyn_arr_create(size_t min_size, size_t item_size)
     {
         dyn_arr->len = 0;
         dyn_arr->nodes = NULL;
-        return dyn_arr;/*  */
+        return dyn_arr; /*  */
     }
 
     size_t num_of_nodes = min_size / MAX_NODE_SIZE + 1;
