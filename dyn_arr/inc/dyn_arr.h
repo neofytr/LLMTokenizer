@@ -7,6 +7,7 @@
 typedef struct
 {
     size_t len;
+    size_t end_index;
     DATA **nodes;
 } dyn_arr_t;
 
