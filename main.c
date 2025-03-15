@@ -43,5 +43,31 @@ int main()
             curr = curr->next;
         }
     }
+
+    dyn_arr_t *arr = dyn_arr_create(0);
+
+    for (int counter = 0; counter < 100; counter++)
+    {
+        if (!dyn_arr_set(arr, counter, 100 - counter))
+        {
+            dyn_arr_free(arr);
+            hash_table_destroy(table);
+            perror("dyn_arr_set");
+            return EXIT_FAILURE;
+        }
+    }
+
+    if (!dyn_arr_sort(arr, 0, 99))
+    {
+        dyn_arr_free(arr);
+        hash_table_destroy(table);
+        perror("dyn_arr_sort");
+        return EXIT_FAILURE;
+    }
+
+    for (int counter = 0; counter < 100; counter++)
+    {
+        printf("%d\n", dyn_arr_get(arr, counter));
+    }
     return EXIT_SUCCESS;
 }
