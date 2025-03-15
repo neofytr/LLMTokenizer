@@ -12,6 +12,9 @@ int main()
 
     for (int counter = 0; counter < text_size - 1; counter++) // prevent underflow for zero text_size by using a signed iterator
     {
+        char a = text[counter];
+        char b = text[counter + 1];
+        fprintf(stdout, "%c%c\n", a, b);
     }
     return EXIT_SUCCESS;
 }
