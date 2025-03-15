@@ -79,41 +79,27 @@ char *get_file(const char *path)
     return arr;
 }
 
-int replace_pairs(uint8_t *text, int text_size, pair_t pair, uint8_t new_symbol)
+void print_text(const uint32_t *text, int length)
 {
-    uint8_t *new_text = (uint8_t *)malloc(text_size + 1);
-    if (!new_text)
+    for (int i = 0; i < length; i++)
     {
-        perror("malloc");
-        return -1;
-    }
-
-    int new_index = 0;
-    for (int i = 0; i < text_size; i++)
-    {
-        if (i < text_size - 1 && text[i] == pair.a && text[i + 1] == pair.b)
-        {
-            new_text[new_index++] = new_symbol;
-            i++; // skip the next character as it's part of the pair
+        if (text[i] < 32 || text[i] > 126)
+        { // Non-printable ASCII
+            printf("[%u]", text[i]);
         }
         else
         {
-            new_text[new_index++] = text[i];
+            printf("%c", (char)text[i]);
         }
     }
-
-    new_text[new_index] = '\0';
-    memcpy(text, new_text, new_index + 1);
-    free(new_text);
-
-    return new_index;
+    printf("\n");
 }
 
 int main(int argc, char **argv)
 {
     if (argc < 2)
     {
-        fprintf(stderr, "Usage: %s <file_path> [max_iterations]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <file_path>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -124,19 +110,30 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    int text_size = strlen(text_buffer);
-    uint8_t *text = (uint8_t *)text_buffer;
+    int original_text_size = strlen(text_buffer);
+    int text_size = original_text_size;
 
-    int max_iterations = 100; // default
-    if (argc > 2)
+    if (text_size < 2)
     {
-        max_iterations = atoi(argv[2]);
-        if (max_iterations <= 0)
-        {
-            fprintf(stderr, "Invalid max iterations: %s\n", argv[2]);
-            free(text_buffer);
-            return EXIT_FAILURE;
-        }
+        printf("Error: File contains less than 2 characters\n");
+        exit_code = EXIT_FAILURE;
+        goto error_handling;
+    }
+
+    // convert char array to uint32_t array
+    uint32_t *text = (uint32_t *)malloc(text_size * sizeof(uint32_t));
+    uint32_t *temp = (uint32_t *)malloc(text_size * sizeof(uint32_t));
+    if (!text || !temp)
+    {
+        perror("malloc");
+        free(text_buffer);
+        return EXIT_FAILURE;
+    }
+
+    for (int i = 0; i < text_size; i++)
+    {
+        text[i] = (uint32_t)(uint8_t)text_buffer[i];
+        temp[i] = (uint32_t)(uint8_t)text_buffer[i];
     }
 
     uint32_t next_symbol = 256;
@@ -145,6 +142,8 @@ int main(int argc, char **argv)
     if (!pair_arr)
     {
         perror("dyn_arr_create");
+        free(text);
+        free(temp);
         free(text_buffer);
         return EXIT_FAILURE;
     }
@@ -156,12 +155,16 @@ int main(int argc, char **argv)
         {
             perror("dyn_arr_set");
             dyn_arr_free(pair_arr);
+            free(text);
+            free(temp);
             free(text_buffer);
             return EXIT_FAILURE;
         }
     }
 
-    for (int iteration = 0; iteration < max_iterations && text_size > 1; iteration++)
+    print_text(text, text_size);
+
+    for (;;)
     {
         hash_table_t *table = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
         if (!table)
@@ -257,95 +260,32 @@ int main(int argc, char **argv)
             goto error_handling;
         }
 
-        text_size = replace_pairs(text, text_size, new_pair, next_symbol);
-        if (text_size == -1)
+        int new_text_size = 0;
+        for (int i = 0; i < text_size; i++)
         {
-            exit_code = EXIT_FAILURE;
-            free(text);
-            dyn_arr_free(node_arr);
-            hash_table_destroy(table);
-            goto error_handling;
+            if (i < text_size - 1 && text[i] == new_pair.a && text[i + 1] == new_pair.b)
+            {
+                temp[new_text_size++] = next_symbol;
+                i++; // skip the next character as it's part of the pair
+            }
+            else
+            {
+                temp[new_text_size++] = text[i];
+            }
         }
+
+        // swap pointers
+        uint32_t *swap = text;
+        text = temp;
+        temp = swap;
+        text_size = new_text_size;
+
+        print_text(text, text_size);
 
         next_symbol++;
         dyn_arr_free(node_arr);
         hash_table_destroy(table);
     }
-
-    FILE *output = fopen("compressed.bin", "wb");
-    if (!output)
-    {
-        perror("fopen");
-        exit_code = EXIT_FAILURE;
-        goto error_handling;
-    }
-
-    /*
-     * Compressed File Format ("compressed.bin")
-     *
-     * The file consists of:
-     *
-     * 1. Dictionary Size (4 bytes)
-     *    - Type: uint32_t
-     *    - Represents the total number of symbols used in the compression process.
-     *    - The first 256 symbols (0-255) are standard byte values.
-     *    - Symbols 256 and above represent merged pairs from the compression process.
-     *
-     * 2. Dictionary Entries ((dict_size - 256) * sizeof(pair_t))
-     *    - Type: struct pair_t { uint32_t a, b; } (8 bytes per entry)
-     *    - Each entry maps a new symbol (256 and above) to a pair of previous symbols.
-     *    - The number of entries is (dict_size - 256).
-     *    - Example:
-     *        - Symbol 256 → (97, 98)  // 'a' and 'b' merged into 256
-     *        - Symbol 257 → (256, 99) // 256 ('ab') and 'c' merged into 257
-     *
-     * 3. Compressed Text Size (4 bytes)
-     *    - Type: int
-     *    - Represents the length of the compressed text in bytes.
-     *
-     * 4. Compressed Text (text_size bytes)
-     *    - Type: uint8_t[]
-     *    - The actual compressed data, where frequent pairs have been replaced
-     *      with new symbols.
-     *    - This sequence can be decompressed using the dictionary.
-     *
-     * File Layout Example (assuming 270 symbols were used):
-     *
-     * -----------------------------------------------------
-     * | Dictionary Size (uint32_t)     | 270              |
-     * -----------------------------------------------------
-     * | Dictionary Entries (pair_t[])  | (dict_size - 256)|
-     * -----------------------------------------------------
-     * | Compressed Text Size (int)     | text_size        |
-     * -----------------------------------------------------
-     * | Compressed Text (uint8_t[])    | text_size bytes  |
-     * -----------------------------------------------------
-     *
-     * Decompression Process:
-     * - Read the dictionary size and reconstruct symbol mappings.
-     * - Read the compressed text size.
-     * - Decode the text by recursively expanding symbols using the dictionary.
-     */
-
-    uint32_t dict_size = next_symbol;
-    fwrite(&dict_size, sizeof(uint32_t), 1, output);
-
-    for (uint32_t i = 256; i < dict_size; i++)
-    {
-        pair_t pair;
-        if (!dyn_arr_get(pair_arr, i, &pair))
-        {
-            perror("dyn_arr_get");
-            fclose(output);
-            exit_code = EXIT_FAILURE;
-            goto error_handling;
-        }
-        fwrite(&pair, sizeof(pair_t), 1, output);
-    }
-
-    fwrite(&text_size, sizeof(int), 1, output);
-    fwrite(text, 1, text_size, output);
-    fclose(output);
 
     printf("Compression complete\n");
 
@@ -354,9 +294,17 @@ error_handling:
     {
         dyn_arr_free(pair_arr);
     }
+    if (text)
+    {
+        free(text);
+    }
+    if (temp)
+    {
+        free(temp);
+    }
     if (text_buffer)
     {
-        free((void *)text_buffer);
+        free(text_buffer);
     }
     return exit_code;
 }
