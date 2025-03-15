@@ -8,7 +8,7 @@
 
 bool is_less(const DATA a, const DATA b)
 {
-    return (intptr_t)a < (intptr_t)b;
+    return ((node_t *)a)->value < ((node_t *)b)->value;
 }
 
 int main()
@@ -40,30 +40,32 @@ int main()
         }
     }
 
+    dyn_arr_t *arr = dyn_arr_create(0);
+    int index = 0;
+
     for (size_t counter = 0; counter < table->size; counter++)
     {
         node_t *curr = table->buckets[counter];
         while (curr)
         {
-            printf("%s => %zu\n", curr->key, curr->value);
+            if (!dyn_arr_set(arr, index++, (void *)curr))
+            {
+                dyn_arr_free(arr);
+                hash_table_destroy(table);
+                perror("dyn_arr_set");
+                return EXIT_FAILURE;
+            }
             curr = curr->next;
         }
     }
 
-    dyn_arr_t *arr = dyn_arr_create(0);
-
-    for (int counter = 0; counter < 100; counter++)
+    for (size_t counter = 0; counter < index; counter++)
     {
-        if (!dyn_arr_set(arr, counter, (DATA)((intptr_t)100 - (intptr_t)counter)))
-        {
-            dyn_arr_free(arr);
-            hash_table_destroy(table);
-            perror("dyn_arr_set");
-            return EXIT_FAILURE;
-        }
+        node_t *node = (node_t *)dyn_arr_get(arr, counter);
+        printf("%s => %ld\n", node->key, node->value);
     }
 
-    if (!dyn_arr_sort(arr, 0, 99, is_less))
+    if (!dyn_arr_sort(arr, 0, index, is_less))
     {
         dyn_arr_free(arr);
         hash_table_destroy(table);
@@ -71,9 +73,11 @@ int main()
         return EXIT_FAILURE;
     }
 
-    for (int counter = 0; counter < 100; counter++)
+    for (size_t counter = 0; counter < index; counter++)
     {
-        printf("%ld\n", (intptr_t)dyn_arr_get(arr, counter));
+        node_t *node = (node_t *)dyn_arr_get(arr, counter);
+        printf("%s => %ld\n", node->key, node->value);
     }
+
     return EXIT_SUCCESS;
 }
