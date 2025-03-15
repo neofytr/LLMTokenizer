@@ -10,8 +10,6 @@ typedef struct
     uint32_t a, b;
 } pair_t;
 
-#define KEY_TYPE pair_t
-#define VALUE_TYPE size_t
 #define HASH_TABLE_IMPLEMENTATION
 #include "hash_table/hash_table.h"
 
@@ -19,8 +17,11 @@ bool is_less(const DATA a, const DATA b)
 {
     node_t *bigram_a = (node_t *)a;
     node_t *bigram_b = (node_t *)b;
-    // return bigram_b->value > bigram_a->value; // this will sort in ascending order
-    return bigram_b->value < bigram_a->value; // this sorts in descending order
+
+    size_t val_a = *(size_t *)bigram_a->value;
+    size_t val_b = *(size_t *)bigram_b->value;
+    return val_b < val_a; // this sorts in descending order
+    return val_b > val_a; // this will sort in ascending order
 }
 
 int main()
@@ -29,7 +30,7 @@ int main()
     const char *text = "The original BPE algorithm operates by iteratively replacing the most common contiguous sequences of characters in a target text with unused 'placeholder' bytes. The iteration ends when no sequences can be found, leaving the target text effectively compressed. Decompression can be performed by reversing this process, querying known placeholder terms against their corresponding denoted sequence, using a lookup table. In the original paper, this lookup table is encoded and stored alongside the compressed text.";
     int text_size = strlen(text);
 
-    hash_table_t *table = hash_table_create(1024);
+    hash_table_t *table = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
     if (!table)
     {
         perror("hash_table_create");
@@ -44,7 +45,8 @@ int main()
 
         // count remains unchanged when key is not found, so, this works
         hash_table_search(table, &pair, &count);
-        if (!hash_table_insert(table, &pair, ++count))
+        count++;
+        if (!hash_table_insert(table, &pair, &count))
         {
             perror("hash_table_insert");
             hash_table_destroy(table);
@@ -62,7 +64,7 @@ int main()
 
     int index = 0;
 
-    for (size_t counter = 0; counter < table->size; counter++)
+    for (size_t counter = 0; counter < table->num_of_buckets; counter++)
     {
         node_t *curr = table->buckets[counter];
         while (curr)
@@ -83,7 +85,9 @@ int main()
     for (size_t i = 0; i < index; i++)
     {
         node_t *node = (node_t *)dyn_arr_get(arr, i);
-        printf("(%u, %u): %zu\n", node->key.a, node->key.b, node->value);
+        pair_t *key_pair = (pair_t *)node->key;
+        size_t *value_count = (size_t *)node->value;
+        printf("(%u, %u): %zu\n", key_pair->a, key_pair->b, *value_count);
     }
 
     if (!dyn_arr_sort(arr, 0, index - 1, is_less))
@@ -98,7 +102,9 @@ int main()
     for (size_t i = 0; i < index; i++)
     {
         node_t *node = (node_t *)dyn_arr_get(arr, i);
-        printf("(%u, %u): %zu\n", node->key.a, node->key.b, node->value);
+        pair_t *key_pair = (pair_t *)node->key;
+        size_t *value_count = (size_t *)node->value;
+        printf("(%u, %u): %zu\n", key_pair->a, key_pair->b, *value_count);
     }
 
     // final cleanup
