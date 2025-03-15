@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 
-#define DATA int
+#define DATA void *
 #define MAX_NODE_SIZE (1U << 8)
 
 typedef struct
@@ -10,7 +10,7 @@ typedef struct
     DATA **nodes;
 } dyn_arr_t;
 
-typedef bool (*dyn_isLessThan)(const DATA *a, const DATA *b); // checks whether a < b
+typedef bool (*dyn_isLessThan)(const DATA a, const DATA b); // checks whether a < b
 
 dyn_arr_t *dyn_arr_create(size_t min_size);
 void dyn_arr_free(dyn_arr_t *dyn_arr);

@@ -1,13 +1,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include "dyn_arr/inc/dyn_arr.h"
 #include "hash_table/inc/hash_table.h"
 
-bool is_less(const DATA *a, const DATA *b)
+bool is_less(const DATA a, const DATA b)
 {
-    return *a < *b;
+    return (intptr_t)a < (intptr_t)b;
 }
 
 int main()
@@ -53,7 +54,7 @@ int main()
 
     for (int counter = 0; counter < 100; counter++)
     {
-        if (!dyn_arr_set(arr, counter, 100 - counter))
+        if (!dyn_arr_set(arr, counter, (DATA)((intptr_t)100 - (intptr_t)counter)))
         {
             dyn_arr_free(arr);
             hash_table_destroy(table);
@@ -72,7 +73,7 @@ int main()
 
     for (int counter = 0; counter < 100; counter++)
     {
-        printf("%d\n", dyn_arr_get(arr, counter));
+        printf("%ld\n", (intptr_t)dyn_arr_get(arr, counter));
     }
     return EXIT_SUCCESS;
 }
