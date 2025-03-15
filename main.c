@@ -10,7 +10,8 @@ bool is_less(const DATA a, const DATA b)
 {
     node_t *bigram_a = (node_t *)a;
     node_t *bigram_b = (node_t *)b;
-    return bigram_b->value > bigram_a->value;
+    // return bigram_b->value > bigram_a->value; // this will sort in ascending order
+    return bigram_b->value < bigram_a->value; // this sorts in descending order
 }
 
 int main()
