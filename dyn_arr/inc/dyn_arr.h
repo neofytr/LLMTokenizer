@@ -9,9 +9,10 @@
 
 typedef struct
 {
-    size_t len;       // Number of nodes allocated
-    size_t item_size; // Size of each data item in bytes
-    void **nodes;     // Array of node pointers
+    size_t len;        // Number of nodes allocated
+    size_t last_index; // Index of the last element in the array
+    size_t item_size;  // Size of each data item in bytes
+    void **nodes;      // Array of node pointers
 } dyn_arr_t;
 
 // Function pointer type for comparing two items
@@ -39,6 +40,8 @@ void dyn_arr_free(dyn_arr_t *dyn_arr);
  * @return true if successful, false if allocation failed
  */
 bool dyn_arr_set(dyn_arr_t *dyn_arr, size_t index, const void *item);
+
+bool dyn_arr_append(dyn_arr_t *dyn_arr, const void *item);
 
 /**
  * Gets a pointer to an item at the specified index

@@ -1,23 +1,4 @@
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <errno.h>
-#include <stdbool.h>
-
-#include "./dyn_arr/inc/dyn_arr.h"
-#include "hash_table/inc/hash_table.h"
-
-typedef struct
-{
-    uint32_t a, b;
-} pair_t;
-
-typedef struct
-{
-    pair_t pair;
-    uint32_t freq;
-} pair_freq_t;
+#include "../inc/bpe.h"
 
 bool is_less(const void *a, const void *b)
 {
@@ -95,7 +76,7 @@ void print_text(const uint32_t *text, int length)
     printf("\n");
 }
 
-void print_graph(dyn_arr_t *pair_arr, size_t len, const char *png_name, bool add_ascii)
+void print_graph(dyn_arr_t *pair_arr, const char *png_name, bool add_ascii)
 {
     FILE *temp_file = fopen("temp_graph.dot", "w");
     if (!temp_file)
@@ -107,7 +88,7 @@ void print_graph(dyn_arr_t *pair_arr, size_t len, const char *png_name, bool add
     fprintf(temp_file, "digraph Pairs {\n");
     if (add_ascii)
     {
-        for (uint32_t index = 0; index < len; index++)
+        for (uint32_t index = 0; index < pair_arr->last_index; index++)
         {
             pair_t pair;
             dyn_arr_get(pair_arr, index, (void *)&pair);
@@ -117,7 +98,7 @@ void print_graph(dyn_arr_t *pair_arr, size_t len, const char *png_name, bool add
     }
     else
     {
-        for (uint32_t index = 256; index < len; index++)
+        for (uint32_t index = 256; index < pair_arr->last_index; index++)
         {
             pair_t pair;
             dyn_arr_get(pair_arr, index, (void *)&pair);
@@ -138,6 +119,104 @@ void print_graph(dyn_arr_t *pair_arr, size_t len, const char *png_name, bool add
     }
 
     system("rm temp_graph.dot");
+}
+
+bool dump_pairs(const char *path, dyn_arr_t *pair_arr)
+{
+    if (!path || !pair_arr)
+    {
+        fprintf(stderr, "Invalid arguments to dump_pairs\n");
+        return false;
+    }
+
+    FILE *dump = fopen(path, "wb");
+    if (!dump)
+    {
+        perror("fopen");
+        return false;
+    }
+
+    for (uint16_t index = 256; index < pair_arr->last_index; index++)
+    {
+        pair_t pair;
+        if (!dyn_arr_get(pair_arr, index, &pair))
+        {
+            fprintf(stderr, "Error retrieving element at index %u\n", index);
+            fclose(dump);
+            return false;
+        }
+
+        if (fwrite(&pair, sizeof(pair_t), 1, dump) != 1)
+        {
+            perror("fwrite");
+            fclose(dump);
+            return false;
+        }
+    }
+
+    fclose(dump);
+    return true;
+}
+
+dyn_arr_t *read_pairs(const char *path)
+{
+    if (!path)
+    {
+        fprintf(stderr, "Invalid file path\n");
+        return NULL;
+    }
+
+    FILE *file = fopen(path, "rb");
+    if (!file)
+    {
+        perror("fopen");
+        return NULL;
+    }
+
+    dyn_arr_t *pair_arr = dyn_arr_create(512, sizeof(pair_t));
+    if (!pair_arr)
+    {
+        fprintf(stderr, "Failed to create dynamic array\n");
+        fclose(file);
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < 256; i++)
+    {
+        pair_t pair = {i, 0};
+        if (!dyn_arr_set(pair_arr, i, &pair))
+        {
+            fprintf(stderr, "dyn_arr_set failed at index %u\n", i);
+            dyn_arr_free(pair_arr);
+            fclose(file);
+            return NULL;
+        }
+    }
+
+    pair_t pair;
+    size_t index = 256;
+    while (fread(&pair, sizeof(pair_t), 1, file) == 1)
+    {
+        if (!dyn_arr_set(pair_arr, index, &pair))
+        {
+            fprintf(stderr, "dyn_arr_set failed at index %zu\n", index);
+            dyn_arr_free(pair_arr);
+            fclose(file);
+            return NULL;
+        }
+        index++;
+    }
+
+    if (ferror(file))
+    {
+        perror("fread");
+        dyn_arr_free(pair_arr);
+        fclose(file);
+        return NULL;
+    }
+
+    fclose(file);
+    return pair_arr;
 }
 
 int main(int argc, char **argv)
@@ -329,7 +408,7 @@ int main(int argc, char **argv)
         hash_table_destroy(table);
     }
 
-    print_graph(pair_arr, next_symbol, "graph.png", false);
+    print_graph(pair_arr, "graph.png", false);
 
 error_handling:
     if (pair_arr)

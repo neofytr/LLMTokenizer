@@ -38,6 +38,7 @@ dyn_arr_t *dyn_arr_create(size_t min_size, size_t item_size)
 
     dyn_arr->len = num_of_nodes;
     dyn_arr->nodes = nodes;
+    dyn_arr->last_index = 0;
 
     return dyn_arr;
 }
@@ -63,6 +64,11 @@ bool dyn_arr_set(dyn_arr_t *dyn_arr, size_t index, const void *item)
     if (!dyn_arr || !item)
     {
         return false;
+    }
+
+    if (index > dyn_arr->last_index)
+    {
+        dyn_arr->last_index = index;
     }
 
     size_t node_index = index & (MAX_NODE_SIZE - 1);
@@ -384,4 +390,14 @@ bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index, dyn_
     }
 
     return true;
+}
+
+bool dyn_arr_append(dyn_arr_t *dyn_arr, const void *item)
+{
+    if (!dyn_arr || !item)
+    {
+        return false;
+    }
+
+    return dyn_arr_set(dyn_arr, dyn_arr->last_index + 1, item);
 }
