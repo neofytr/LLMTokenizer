@@ -1,5 +1,7 @@
 #include "dyn_arr.h"
 
+#include <math.h>
+
 dyn_arr_t *dyn_arr_create(size_t min_size)
 {
     dyn_arr_t *dyn_arr = (dyn_arr_t *)malloc(sizeof(dyn_arr_t));
@@ -54,4 +56,41 @@ void dyn_arr_free(dyn_arr_t *dyn_arr)
     }
 
     free(dyn_arr);
+}
+
+bool dyn_arr_insert(dyn_arr_t *dyn_arr, size_t index, DATA item)
+{
+    if (!dyn_arr)
+        return false;
+
+    size_t node_index = index & (MAX_NODE_SIZE - 1);
+    size_t node_no = index / MAX_NODE_SIZE;
+
+    if (node_no >= dyn_arr->len)
+    {
+        // node number out of bounds, expand the node array
+        size_t new_len = 1U << ((size_t)log2(node_no) + 1U);
+
+        void *temp = realloc(dyn_arr->nodes, new_len * sizeof(DATA *));
+        if (!temp)
+            return false;
+        dyn_arr->nodes = temp;
+
+        // fill the resized node array with NULL pointers
+        for (size_t i = dyn_arr->len; i < new_len; i++)
+            dyn_arr->nodes[i] = NULL;
+
+        dyn_arr->len = new_len;
+    }
+
+    if (!dyn_arr->nodes[node_no])
+    {
+        // if the node ptr is NULL, allocate it
+        dyn_arr->nodes[node_no] = malloc(MAX_NODE_SIZE * sizeof(DATA));
+        if (!dyn_arr->nodes[node_no])
+            return false;
+    }
+
+    dyn_arr->nodes[node_no][node_index] = item;
+    return true;
 }

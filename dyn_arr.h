@@ -1,7 +1,8 @@
 #include <stdlib.h>
+#include <stdbool.h>
 
 #define DATA int
-#define MAX_NODE_SIZE 256
+#define MAX_NODE_SIZE (1U << 8)
 
 typedef struct
 {
