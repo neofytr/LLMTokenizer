@@ -2,6 +2,7 @@
     "files.associations": {
         "cstdlib": "c",
         "dyn_arr.h": "c",
-        "hash_table.h": "c"
+        "hash_table.h": "c",
+        "pair_hash_table.h": "c"
     }
 }

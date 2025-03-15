@@ -1,8 +1,27 @@
-#include "../inc/hash_table.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
-#include <stdint.h>
 
-#include <stdint.h>
+#include "../inc/pair_hash_table.h"
+
+hash_table_t *hash_table_create(size_t size)
+{
+    hash_table_t *table = malloc(sizeof(hash_table_t));
+    if (!table)
+        return NULL;
+
+    table->size = size;
+    table->buckets = calloc(size, sizeof(node_t *));
+    if (!table->buckets)
+    {
+        free(table);
+        return NULL;
+    }
+
+    return table;
+}
 
 unsigned long djb2_hash(const uint32_t key_one, const uint32_t key_two)
 {
@@ -23,23 +42,6 @@ unsigned long djb2_hash(const uint32_t key_one, const uint32_t key_two)
     return hash;
 }
 
-hash_table_t *hash_table_create(size_t size)
-{
-    hash_table_t *table = malloc(sizeof(hash_table_t));
-    if (!table)
-        return NULL;
-
-    table->size = size;
-    table->buckets = calloc(size, sizeof(node_t *));
-    if (!table->buckets)
-    {
-        free(table);
-        return NULL;
-    }
-
-    return table;
-}
-
 void hash_table_destroy(hash_table_t *table)
 {
     if (!table)
@@ -51,7 +53,6 @@ void hash_table_destroy(hash_table_t *table)
         while (current)
         {
             node_t *next = current->next;
-            free(current->key);
             free(current);
             current = next;
         }
@@ -71,7 +72,7 @@ bool hash_table_insert(hash_table_t *table, const uint32_t key_one, const uint32
     node_t *current = table->buckets[hash];
     while (current)
     {
-        if (key_one != current->key[0] || key_two != current->key[1])
+        if (key_one == current->key[0] && key_two == current->key[1])
         {
             current->value = value;
             return true;
@@ -85,7 +86,6 @@ bool hash_table_insert(hash_table_t *table, const uint32_t key_one, const uint32
 
     new_node->key[0] = key_one;
     new_node->key[1] = key_two;
-
     new_node->value = value;
     new_node->next = table->buckets[hash];
     table->buckets[hash] = new_node;
@@ -99,13 +99,12 @@ bool hash_table_delete(hash_table_t *table, const uint32_t key_one, const uint32
         return false;
 
     unsigned long hash = djb2_hash(key_one, key_two) % table->size;
-
     node_t *current = table->buckets[hash];
     node_t *prev = NULL;
 
     while (current)
     {
-        if (key_one != current->key[0] || key_two != current->key[1])
+        if (key_one == current->key[0] && key_two == current->key[1])
         {
             if (prev)
             {
@@ -116,7 +115,6 @@ bool hash_table_delete(hash_table_t *table, const uint32_t key_one, const uint32
                 table->buckets[hash] = current->next;
             }
 
-            free(current->key);
             free(current);
             return true;
         }
@@ -134,11 +132,11 @@ bool hash_table_search(hash_table_t *table, const uint32_t key_one, const uint32
         return false;
 
     unsigned long hash = djb2_hash(key_one, key_two) % table->size;
-
     node_t *current = table->buckets[hash];
+
     while (current)
     {
-        if (key_one != current->key[0] || key_two != current->key[1])
+        if (key_one == current->key[0] && key_two == current->key[1])
         {
             *value = current->value;
             return true;

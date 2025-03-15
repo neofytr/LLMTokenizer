@@ -3,8 +3,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#include "dyn_arr/inc/dyn_arr.h"
-#include "hash_table/inc/hash_table.h"
+#include "./dyn_arr/inc/dyn_arr.h"
+#include "./hash_table/inc/pair_hash_table.h"
 
 bool is_less(const DATA a, const DATA b)
 {
@@ -28,13 +28,11 @@ int main()
 
     for (int counter = 0; counter < text_size - 1; counter++)
     {
-        char key[3] = {text[counter], text[counter + 1], 0};
-
         size_t count = 0;
 
         // count remains unchanged when key is not found, so, this works
-        hash_table_search(table, key, &count);
-        if (!hash_table_insert(table, key, ++count))
+        hash_table_search(table, text[counter], text[counter + 1], &count);
+        if (!hash_table_insert(table, text[counter], text[counter + 1], ++count))
         {
             perror("hash_table_insert");
             hash_table_destroy(table);
@@ -73,7 +71,7 @@ int main()
     for (size_t i = 0; i < index; i++)
     {
         node_t *node = (node_t *)dyn_arr_get(arr, i);
-        printf("\"%s\": %zu\n", node->key, node->value);
+        printf("(%u, %u): %zu\n", node->key[0], node->key[1], node->value);
     }
 
     if (!dyn_arr_sort(arr, 0, index - 1, is_less))
@@ -88,12 +86,11 @@ int main()
     for (size_t i = 0; i < index; i++)
     {
         node_t *node = (node_t *)dyn_arr_get(arr, i);
-        printf("\"%s\": %zu\n", node->key, node->value);
+        printf("(%u, %u): %zu\n", node->key[0], node->key[1], node->value);
     }
 
     // final cleanup
     dyn_arr_free(arr);
-    // no use of the hash table now; delete it
     hash_table_destroy(table);
 
     return EXIT_SUCCESS;

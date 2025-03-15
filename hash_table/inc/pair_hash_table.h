@@ -1,5 +1,5 @@
-#ifndef HASH_TABLE_H
-#define HASH_TABLE_H
+#ifndef PAIR_HASH_TABLE_H
+#define PAIR_HASH_TABLE_H
 
 #include <stdlib.h>
 #include <stdbool.h>
