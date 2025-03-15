@@ -120,6 +120,8 @@ dyn_arr_t *dyn_arr_create(size_t min_size)
 
     if (!min_size)
     {
+        dyn_arr->len = 0;
+        dyn_arr->nodes = NULL;
         return dyn_arr;
     }
 
@@ -132,7 +134,7 @@ dyn_arr_t *dyn_arr_create(size_t min_size)
     }
 
     // allocate the min number of nodes
-    for (int counter = 0; counter < num_of_nodes; counter++)
+    for (size_t counter = 0; counter < num_of_nodes; counter++)
     {
         nodes[counter] = (DATA *)malloc(MAX_NODE_SIZE * sizeof(DATA));
         if (!nodes[counter])
@@ -142,6 +144,7 @@ dyn_arr_t *dyn_arr_create(size_t min_size)
             {
                 free(nodes[index]);
             }
+            free(nodes);
             return NULL;
         }
     }
@@ -163,6 +166,8 @@ void dyn_arr_free(dyn_arr_t *dyn_arr)
     {
         free(dyn_arr->nodes[counter]);
     }
+
+    free(dyn_arr->nodes);
 
     free(dyn_arr);
 }

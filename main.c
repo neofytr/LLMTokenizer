@@ -8,7 +8,9 @@
 
 bool is_less(const DATA a, const DATA b)
 {
-    return ((node_t *)a)->value < ((node_t *)b)->value;
+    node_t *bigram_a = (node_t *)a;
+    node_t *bigram_b = (node_t *)b;
+    return bigram_b->value > bigram_a->value;
 }
 
 int main()
@@ -24,7 +26,7 @@ int main()
         return EXIT_FAILURE;
     }
 
-    for (int counter = 0; counter < text_size - 1; counter++) // prevent underflow for zero text_size by using a signed iterator
+    for (int counter = 0; counter < text_size - 1; counter++)
     {
         char key[3] = {text[counter], text[counter + 1], 0};
 
@@ -41,6 +43,13 @@ int main()
     }
 
     dyn_arr_t *arr = dyn_arr_create(0);
+    if (!arr)
+    {
+        perror("dyn_arr_create");
+        hash_table_destroy(table);
+        return EXIT_FAILURE;
+    }
+
     int index = 0;
 
     for (size_t counter = 0; counter < table->size; counter++)
@@ -48,24 +57,26 @@ int main()
         node_t *curr = table->buckets[counter];
         while (curr)
         {
-            if (!dyn_arr_set(arr, index++, (void *)curr))
+            if (!dyn_arr_set(arr, index++, (DATA)curr))
             {
                 dyn_arr_free(arr);
                 hash_table_destroy(table);
                 perror("dyn_arr_set");
                 return EXIT_FAILURE;
             }
+
             curr = curr->next;
         }
     }
 
-    for (size_t counter = 0; counter < index; counter++)
+    printf("Unsorted bigrams:\n");
+    for (size_t i = 0; i < index; i++)
     {
-        node_t *node = (node_t *)dyn_arr_get(arr, counter);
-        printf("%s => %ld\n", node->key, node->value);
+        node_t *node = (node_t *)dyn_arr_get(arr, i);
+        printf("\"%s\": %zu\n", node->key, node->value);
     }
 
-    if (!dyn_arr_sort(arr, 0, index, is_less))
+    if (!dyn_arr_sort(arr, 0, index - 1, is_less))
     {
         dyn_arr_free(arr);
         hash_table_destroy(table);
@@ -73,11 +84,17 @@ int main()
         return EXIT_FAILURE;
     }
 
-    for (size_t counter = 0; counter < index; counter++)
+    printf("\nSorted bigrams:\n");
+    for (size_t i = 0; i < index; i++)
     {
-        node_t *node = (node_t *)dyn_arr_get(arr, counter);
-        printf("%s => %ld\n", node->key, node->value);
+        node_t *node = (node_t *)dyn_arr_get(arr, i);
+        printf("\"%s\": %zu\n", node->key, node->value);
     }
+
+    // final cleanup
+    dyn_arr_free(arr);
+    // no use of the hash table now; delete it
+    hash_table_destroy(table);
 
     return EXIT_SUCCESS;
 }
