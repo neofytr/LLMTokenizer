@@ -28,5 +28,6 @@ void print_text(const uint32_t *text, int length);
 void print_graph(dyn_arr_t *pair_arr, const char *png_name, bool add_ascii);
 bool dump_pairs(const char *path, dyn_arr_t *pair_arr);
 dyn_arr_t *read_pairs(const char *path);
+dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len);
 
 #endif
