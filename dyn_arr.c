@@ -23,6 +23,7 @@ dyn_arr_t *dyn_arr_create(size_t min_size)
         return NULL;
     }
 
+    // allocate the min number of nodes
     for (int counter = 0; counter < num_of_nodes; counter++)
     {
         nodes[counter] = (DATA *)malloc(MAX_NODE_SIZE * sizeof(DATA));
@@ -100,5 +101,6 @@ DATA dyn_arr_get(dyn_arr_t *dyn_arr, size_t index)
     size_t node_no = index / MAX_NODE_SIZE;
     size_t node_index = index & (MAX_NODE_SIZE - 1);
 
+    // this return will cause segfault if the array index is out of bounds
     return dyn_arr->nodes[node_no][node_index];
 }
