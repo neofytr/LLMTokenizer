@@ -20,19 +20,28 @@ int main()
 
     for (int counter = 0; counter < text_size - 1; counter++) // prevent underflow for zero text_size by using a signed iterator
     {
-        char key[2] = {text[counter], text[counter + 1]};
+        char key[3] = {text[counter], text[counter + 1], 0};
 
         size_t count = 0;
 
         // count remains unchanged when key is not found, so, this works
         hash_table_search(table, key, &count);
-        if (!hash_table_insert(table, key, count++))
+        if (!hash_table_insert(table, key, ++count))
         {
             perror("hash_table_insert");
             hash_table_destroy(table);
             return EXIT_FAILURE;
         }
     }
-    
+
+    for (size_t counter = 0; counter < table->size; counter++)
+    {
+        node_t *curr = table->buckets[counter];
+        while (curr)
+        {
+            printf("%s => %zu\n", curr->key, curr->value);
+            curr = curr->next;
+        }
+    }
     return EXIT_SUCCESS;
 }
