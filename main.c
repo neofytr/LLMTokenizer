@@ -95,6 +95,37 @@ void print_text(const uint32_t *text, int length)
     printf("\n");
 }
 
+void print_graph(dyn_arr_t *pair_arr, size_t len, const char *png_name)
+{
+    FILE *temp_file = fopen("temp_graph.dot", "w");
+    if (!temp_file)
+    {
+        perror("Failed to create temp file");
+        return;
+    }
+
+    fprintf(temp_file, "digraph Pairs {\n");
+    for (uint32_t index = 256; index < len; index++)
+    {
+        pair_t pair;
+        dyn_arr_get(pair_arr, index, (void *)&pair);
+        fprintf(temp_file, "%u -> %u;\n", index, pair.a);
+        fprintf(temp_file, "%u -> %u;\n", index, pair.b);
+    }
+    fprintf(temp_file, "}\n");
+    fclose(temp_file);
+
+    char command[256];
+    snprintf(command, sizeof(command), "dot -Tpng temp_graph.dot -o %s", png_name);
+    int result = system(command);
+    if (result != 0)
+    {
+        fprintf(stderr, "Failed to generate PNG\n");
+    }
+
+    system("rm temp_graph.dot");
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
@@ -280,12 +311,11 @@ int main(int argc, char **argv)
 
         next_symbol++;
 
-        printf("%d\n", new_text_size);
         dyn_arr_free(node_arr);
         hash_table_destroy(table);
     }
 
-    printf("Compression complete\n");
+    print_graph(pair_arr, next_symbol, "graph.png");
 
 error_handling:
     if (pair_arr)
