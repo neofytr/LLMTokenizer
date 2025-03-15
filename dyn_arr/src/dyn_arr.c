@@ -1,4 +1,4 @@
-#include "dyn_arr.h"
+#include "../inc/dyn_arr.h"
 
 #include <math.h>
 
