@@ -10,8 +10,7 @@ typedef struct
     uint32_t a, b;
 } pair_t;
 
-#define HASH_TABLE_IMPLEMENTATION
-#include "hash_table/hash_table.h"
+#include "hash_table/inc/hash_table.h"
 
 bool is_less(const DATA a, const DATA b)
 {
