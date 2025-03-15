@@ -7,7 +7,6 @@
 typedef struct
 {
     size_t len;
-    size_t end_index;
     DATA **nodes;
 } dyn_arr_t;
 
@@ -16,3 +15,5 @@ void dyn_arr_free(dyn_arr_t *dyn_arr);
 
 bool dyn_arr_insert(dyn_arr_t *dyn_arr, size_t index, DATA item);
 DATA dyn_arr_get(dyn_arr_t *dyn_arr, size_t index);
+
+bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index);

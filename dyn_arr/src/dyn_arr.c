@@ -2,6 +2,11 @@
 
 #include <math.h>
 
+bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index)
+{
+    
+}
+
 dyn_arr_t *dyn_arr_create(size_t min_size)
 {
     dyn_arr_t *dyn_arr = (dyn_arr_t *)malloc(sizeof(dyn_arr_t));
