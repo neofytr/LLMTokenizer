@@ -162,8 +162,6 @@ int main(int argc, char **argv)
         }
     }
 
-    print_text(text, text_size);
-
     for (;;)
     {
         hash_table_t *table = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
@@ -226,7 +224,7 @@ int main(int argc, char **argv)
             }
         }
 
-        if (index <= 1)
+        if (!index)
         {
             dyn_arr_free(node_arr);
             hash_table_destroy(table);
@@ -280,9 +278,9 @@ int main(int argc, char **argv)
         temp = swap;
         text_size = new_text_size;
 
-        print_text(text, text_size);
-
         next_symbol++;
+
+        printf("%d\n", new_text_size);
         dyn_arr_free(node_arr);
         hash_table_destroy(table);
     }
