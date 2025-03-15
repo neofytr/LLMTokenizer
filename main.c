@@ -5,6 +5,11 @@
 #include "dyn_arr/inc/dyn_arr.h"
 #include "hash_table/inc/hash_table.h"
 
+bool is_less(DATA a, DATA b)
+{
+    return a < b;
+}
+
 int main()
 {
     // taken from wikipedia article for BPE
@@ -57,7 +62,7 @@ int main()
         }
     }
 
-    if (!dyn_arr_sort(arr, 0, 99))
+    if (!dyn_arr_sort(arr, 0, 99, is_less))
     {
         dyn_arr_free(arr);
         hash_table_destroy(table);

@@ -2,7 +2,7 @@
 
 #include <math.h>
 
-bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index)
+bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index, dyn_isLessThan is_less)
 {
     // check if array is empty or if indices are invalid
     if (!dyn_arr || start_index > end_index)
@@ -21,11 +21,11 @@ bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index)
         size_t mid = start_index + (end_index - start_index) / 2;
 
         // divide the array into half and recursively sort the halves
-        if (!dyn_arr_sort(dyn_arr, start_index, mid))
+        if (!dyn_arr_sort(dyn_arr, start_index, mid, is_less))
         {
             return false;
         }
-        if (!dyn_arr_sort(dyn_arr, mid + 1, end_index))
+        if (!dyn_arr_sort(dyn_arr, mid + 1, end_index, is_less))
         {
             return false;
         }
@@ -63,7 +63,7 @@ bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index)
 
         while (left_index < left_len && right_index < right_len)
         {
-            if (left_temp[left_index] < right_temp[right_index])
+            if (is_less(left_temp[left_index], right_temp[right_index]))
             {
                 if (!dyn_arr_set(dyn_arr, main_index++, left_temp[left_index++]))
                 {
