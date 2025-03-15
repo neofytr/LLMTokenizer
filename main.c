@@ -50,15 +50,33 @@ int main()
         }
     }
 
-    dyn_arr_t *arr = dyn_arr_create(0);
-    if (!arr)
+    dyn_arr_t *node_arr = dyn_arr_create(0);
+    if (!node_arr)
     {
         perror("dyn_arr_create");
         hash_table_destroy(table);
         return EXIT_FAILURE;
     }
 
-    dyn_arr_free(arr);
+    // put all the nodes into the dynamic array node_arr
+    for (size_t counter = 0, index = 0; counter < table->num_of_buckets; counter++)
+    {
+        node_t *curr = table->buckets[counter];
+        while (curr)
+        {
+            if (!dyn_arr_set(node_arr, index++, (DATA)curr))
+            {
+                perror("dyn_arr_set");
+                dyn_arr_free(node_arr);
+                hash_table_destroy(table);
+                return EXIT_FAILURE;
+            }
+
+            curr = curr->next;
+        }
+    }
+
+    dyn_arr_free(node_arr);
     hash_table_destroy(table);
 
     return EXIT_SUCCESS;
