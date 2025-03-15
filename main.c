@@ -4,7 +4,16 @@
 #include <stdint.h>
 
 #include "./dyn_arr/inc/dyn_arr.h"
-#include "./hash_table/inc/pair_hash_table.h"
+
+typedef struct
+{
+    uint32_t a, b;
+} pair_t;
+
+#define KEY_TYPE pair_t
+#define VALUE_TYPE size_t
+#define HASH_TABLE_IMPLEMENTATION
+#include "hash_table/hash_table.h"
 
 bool is_less(const DATA a, const DATA b)
 {
@@ -29,11 +38,13 @@ int main()
 
     for (int counter = 0; counter < text_size - 1; counter++)
     {
+        pair_t pair = {text[counter], text[counter + 1]};
+
         size_t count = 0;
 
         // count remains unchanged when key is not found, so, this works
-        hash_table_search(table, text[counter], text[counter + 1], &count);
-        if (!hash_table_insert(table, text[counter], text[counter + 1], ++count))
+        hash_table_search(table, &pair, &count);
+        if (!hash_table_insert(table, &pair, ++count))
         {
             perror("hash_table_insert");
             hash_table_destroy(table);
@@ -72,7 +83,7 @@ int main()
     for (size_t i = 0; i < index; i++)
     {
         node_t *node = (node_t *)dyn_arr_get(arr, i);
-        printf("(%u, %u): %zu\n", node->key[0], node->key[1], node->value);
+        printf("(%u, %u): %zu\n", node->key.a, node->key.b, node->value);
     }
 
     if (!dyn_arr_sort(arr, 0, index - 1, is_less))
@@ -87,7 +98,7 @@ int main()
     for (size_t i = 0; i < index; i++)
     {
         node_t *node = (node_t *)dyn_arr_get(arr, i);
-        printf("(%u, %u): %zu\n", node->key[0], node->key[1], node->value);
+        printf("(%u, %u): %zu\n", node->key.a, node->key.b, node->value);
     }
 
     // final cleanup
