@@ -12,6 +12,20 @@ typedef struct
     uint32_t a, b;
 } pair_t;
 
+typedef struct
+{
+    pair_t pair;
+    uint32_t freq;
+} pair_freq_t;
+
+bool is_less(const void *a, const void *b)
+{
+    pair_freq_t *freq_a = (pair_freq_t *)a;
+    pair_freq_t *freq_b = (pair_freq_t *)b;
+
+    return freq_a->freq < freq_b->freq;
+}
+
 char *get_file(const char *path)
 {
     FILE *file = fopen(path, "r");
@@ -67,7 +81,7 @@ char *get_file(const char *path)
 int main(int argc, char **argv)
 {
     int exit_code = EXIT_SUCCESS;
-    const char *text = get_file(argv[1]);
+    char *text = get_file(argv[1]);
     int text_size = strlen(text);
 
     hash_table_t *table = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
@@ -94,6 +108,49 @@ int main(int argc, char **argv)
         }
     }
 
+    dyn_arr_t *node_arr = dyn_arr_create(0, sizeof(pair_freq_t));
+    if (!node_arr)
+    {
+        perror("dyn_arr_create");
+        exit_code = EXIT_FAILURE;
+        goto error_handling;
+    }
+
+    size_t index = 0;
+    for (size_t counter = 0; counter < table->num_of_buckets; counter++)
+    {
+        node_t *curr = table->buckets[counter];
+        while (curr)
+        {
+            pair_freq_t temp;
+            pair_t *pair = curr->key;
+            size_t *freq = curr->value;
+
+            temp.pair.a = pair->a;
+            temp.pair.b = pair->b;
+            temp.freq = *freq;
+
+            if (!dyn_arr_set(node_arr, index++, (void *)&temp))
+            {
+                perror("dyn_arr_set");
+                exit_code = EXIT_FAILURE;
+                goto error_handling;
+            }
+
+            curr = curr->next;
+        }
+    }
+
+    pair_freq_t max;
+    if (!dyn_arr_max(node_arr, 0, index - 1, is_less, &max))
+    {
+        perror("dyn_arr_max");
+        exit_code = EXIT_FAILURE;
+        goto error_handling;
+    }
+
+    printf("%d\n", max.freq);
+
     dyn_arr_t *pair_arr = dyn_arr_create(0, sizeof(pair_t));
     if (!pair_arr)
     {
@@ -114,13 +171,21 @@ int main(int argc, char **argv)
     }
 
 error_handling:
+    if (node_arr)
+    {
+        dyn_arr_free(node_arr);
+    }
+    if (pair_arr)
+    {
+        dyn_arr_free(pair_arr);
+    }
     if (table)
     {
         hash_table_destroy(table);
     }
     if (text)
     {
-        free(text);
+        free((void *)text);
     }
     return exit_code;
 }
