@@ -2,7 +2,49 @@
 
 #include <math.h>
 
-bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index, dyn_isLessThan is_less)
+DATA dyn_arr_max(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index, dyn_iss_less_than_t is_less)
+{
+    // check if array is empty or if indices are invalid
+    if (!dyn_arr || start_index > end_index)
+    {
+        return false;
+    }
+
+    DATA max = dyn_arr_get(dyn_arr, start_index);
+    for (size_t counter = start_index; counter <= end_index; counter++)
+    {
+        DATA temp = dyn_arr_get(dyn_arr, counter);
+        if (is_less(max, temp))
+        {
+            max = temp;
+        }
+    }
+
+    return max;
+}
+
+DATA dyn_arr_min(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index, dyn_iss_less_than_t is_less)
+{
+    // check if array is empty or if indices are invalid
+    if (!dyn_arr || start_index > end_index)
+    {
+        return false;
+    }
+
+    DATA min = dyn_arr_get(dyn_arr, start_index);
+    for (size_t counter = start_index; counter <= end_index; counter++)
+    {
+        DATA temp = dyn_arr_get(dyn_arr, counter);
+        if (is_less(temp, min))
+        {
+            min = temp;
+        }
+    }
+
+    return min;
+}
+
+bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index, dyn_compare_t is_less)
 {
     // check if array is empty or if indices are invalid
     if (!dyn_arr || start_index > end_index)
