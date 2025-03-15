@@ -35,5 +35,23 @@ dyn_arr_t *dyn_arr_create(size_t min_size)
         }
     }
 
+    dyn_arr->len = num_of_nodes;
+    dyn_arr->nodes = nodes;
+
     return dyn_arr;
+}
+
+void dyn_arr_free(dyn_arr_t *dyn_arr)
+{
+    if (!dyn_arr)
+    {
+        return;
+    }
+
+    for (size_t counter = 0; counter < dyn_arr->len; counter++)
+    {
+        free(dyn_arr->nodes[counter]);
+    }
+
+    free(dyn_arr);
 }
