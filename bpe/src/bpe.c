@@ -219,19 +219,17 @@ dyn_arr_t *read_pairs(const char *path)
     return pair_arr;
 }
 
-int main(int argc, char **argv)
+dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 {
-    if (argc < 2)
+    if (!path)
     {
-        fprintf(stderr, "Usage: %s <file_path>\n", argv[0]);
-        return EXIT_FAILURE;
+        return NULL;
     }
 
-    int exit_code = EXIT_SUCCESS;
-    char *text_buffer = get_file(argv[1]);
+    char *text_buffer = get_file(path);
     if (!text_buffer)
     {
-        return EXIT_FAILURE;
+        return NULL;
     }
 
     int original_text_size = strlen(text_buffer);
@@ -240,8 +238,7 @@ int main(int argc, char **argv)
     if (text_size < 2)
     {
         printf("Error: File contains less than 2 characters\n");
-        exit_code = EXIT_FAILURE;
-        goto error_handling;
+        return NULL;
     }
 
     // convert char array to uint32_t array
@@ -251,7 +248,7 @@ int main(int argc, char **argv)
     {
         perror("malloc");
         free(text_buffer);
-        return EXIT_FAILURE;
+        return NULL;
     }
 
     for (int i = 0; i < text_size; i++)
@@ -259,6 +256,8 @@ int main(int argc, char **argv)
         text[i] = (uint32_t)(uint8_t)text_buffer[i];
         temp[i] = (uint32_t)(uint8_t)text_buffer[i];
     }
+
+    free(text_buffer);
 
     uint32_t next_symbol = 256;
 
@@ -268,8 +267,7 @@ int main(int argc, char **argv)
         perror("dyn_arr_create");
         free(text);
         free(temp);
-        free(text_buffer);
-        return EXIT_FAILURE;
+        return NULL;
     }
 
     for (uint32_t i = 0; i < 256; i++)
@@ -281,8 +279,7 @@ int main(int argc, char **argv)
             dyn_arr_free(pair_arr);
             free(text);
             free(temp);
-            free(text_buffer);
-            return EXIT_FAILURE;
+            return NULL;
         }
     }
 
@@ -292,7 +289,6 @@ int main(int argc, char **argv)
         if (!table)
         {
             perror("hash_table_create");
-            exit_code = EXIT_FAILURE;
             goto error_handling;
         }
 
@@ -306,7 +302,6 @@ int main(int argc, char **argv)
             if (!hash_table_insert(table, &pair, &count))
             {
                 perror("hash_table_insert");
-                exit_code = EXIT_FAILURE;
                 hash_table_destroy(table);
                 goto error_handling;
             }
@@ -316,7 +311,6 @@ int main(int argc, char **argv)
         if (!node_arr)
         {
             perror("dyn_arr_create");
-            exit_code = EXIT_FAILURE;
             hash_table_destroy(table);
             goto error_handling;
         }
@@ -338,7 +332,6 @@ int main(int argc, char **argv)
                 if (!dyn_arr_set(node_arr, index++, (void *)&temp))
                 {
                     perror("dyn_arr_set");
-                    exit_code = EXIT_FAILURE;
                     dyn_arr_free(node_arr);
                     hash_table_destroy(table);
                     goto error_handling;
@@ -359,7 +352,6 @@ int main(int argc, char **argv)
         if (!dyn_arr_max(node_arr, 0, index - 1, is_less, &max))
         {
             perror("dyn_arr_max");
-            exit_code = EXIT_FAILURE;
             dyn_arr_free(node_arr);
             hash_table_destroy(table);
             goto error_handling;
@@ -376,7 +368,6 @@ int main(int argc, char **argv)
         if (!dyn_arr_set(pair_arr, next_symbol, &new_pair))
         {
             perror("dyn_arr_set");
-            exit_code = EXIT_FAILURE;
             dyn_arr_free(node_arr);
             hash_table_destroy(table);
             goto error_handling;
@@ -408,7 +399,10 @@ int main(int argc, char **argv)
         hash_table_destroy(table);
     }
 
-    print_graph(pair_arr, "graph.png", false);
+    *encoding = text;
+    *len = text_size;
+    free(temp);
+    return pair_arr;
 
 error_handling:
     if (pair_arr)
@@ -423,9 +417,31 @@ error_handling:
     {
         free(temp);
     }
-    if (text_buffer)
+
+    return NULL;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc < 2)
     {
-        free(text_buffer);
+        fprintf(stderr, "Usage: %s <file_path>\n", argv[0]);
+        return EXIT_FAILURE;
     }
-    return exit_code;
+
+    uint32_t *text;
+    size_t text_len;
+
+    dyn_arr_t *pair_arr = compress(argv[1], &text, &text_len);
+    if (!pair_arr)
+    {
+        return EXIT_FAILURE;
+    }
+
+    print_text(text, text_len);
+    print_graph(pair_arr, "graph.png", false);
+
+    free(text);
+    dyn_arr_free(pair_arr);
+    return EXIT_SUCCESS;
 }
