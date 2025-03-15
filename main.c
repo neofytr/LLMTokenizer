@@ -304,9 +304,7 @@ int main(int argc, char **argv)
 
     fclose(output);
 
-    char *text_org = get_file(argv[1]);
-    printf("Compression complete. Original size: %lu bytes, Compressed size: %d bytes\n",
-           strlen(text_org), text_size);
+    printf("Compression complete");
 
 error_handling:
     if (pair_arr)
