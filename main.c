@@ -5,9 +5,9 @@
 #include "dyn_arr/inc/dyn_arr.h"
 #include "hash_table/inc/hash_table.h"
 
-bool is_less(DATA a, DATA b)
+bool is_less(const DATA *a, const DATA *b)
 {
-    return a < b;
+    return *a < *b;
 }
 
 int main()

@@ -63,7 +63,7 @@ bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index, dyn_
 
         while (left_index < left_len && right_index < right_len)
         {
-            if (is_less(left_temp[left_index], right_temp[right_index]))
+            if (is_less(&left_temp[left_index], &right_temp[right_index]))
             {
                 if (!dyn_arr_set(dyn_arr, main_index++, left_temp[left_index++]))
                 {
