@@ -4,7 +4,110 @@
 
 bool dyn_arr_sort(dyn_arr_t *dyn_arr, size_t start_index, size_t end_index)
 {
-    
+    // check if array is empty or if indices are invalid
+    if (!dyn_arr || start_index > end_index)
+    {
+        return false;
+    }
+
+    if (start_index == end_index)
+    {
+        // one length array is already sorted by definition
+        return true;
+    }
+
+    if (start_index < end_index)
+    {
+        size_t mid = start_index + (end_index - start_index) / 2;
+
+        // divide the array into half and recursively sort the halves
+        if (!dyn_arr_sort(dyn_arr, start_index, mid))
+        {
+            return false;
+        }
+        if (!dyn_arr_sort(dyn_arr, mid + 1, end_index))
+        {
+            return false;
+        }
+
+        // store the sorted halves into temporary arrays
+        size_t left_len = mid - start_index + 1;
+        size_t right_len = end_index - mid;
+
+        DATA *left_temp = (DATA *)malloc(sizeof(DATA) * left_len);
+        if (!left_temp)
+        {
+            return false;
+        }
+        DATA *right_temp = (DATA *)malloc(sizeof(DATA) * right_len);
+        if (!right_temp)
+        {
+            free(left_temp);
+            return false;
+        }
+
+        for (size_t counter = 0; counter < left_len; counter++)
+        {
+            left_temp[counter] = dyn_arr_get(dyn_arr, start_index + counter);
+        }
+
+        for (size_t counter = 0; counter < right_len; counter++)
+        {
+            right_temp[counter] = dyn_arr_get(dyn_arr, mid + 1 + counter);
+        }
+
+        // merge the sorted halves
+        size_t left_index = 0;
+        size_t right_index = 0;
+        size_t main_index = start_index;
+
+        while (left_index < left_len && right_index < right_len)
+        {
+            if (left_temp[left_index] < right_temp[right_index])
+            {
+                if (!dyn_arr_set(dyn_arr, main_index++, left_temp[left_index++]))
+                {
+                    free(left_temp);
+                    free(right_temp);
+                    return false;
+                }
+            }
+            else
+            {
+                if (!dyn_arr_set(dyn_arr, main_index++, right_temp[right_index++]))
+                {
+                    free(left_temp);
+                    free(right_temp);
+                    return false;
+                }
+            }
+        }
+
+        while (left_index < left_len)
+        {
+            if (!dyn_arr_set(dyn_arr, main_index++, left_temp[left_index++]))
+            {
+                free(left_temp);
+                free(right_temp);
+                return false;
+            }
+        }
+
+        while (right_index < right_len)
+        {
+            if (!dyn_arr_set(dyn_arr, main_index++, right_temp[right_index++]))
+            {
+                free(left_temp);
+                free(right_temp);
+                return false;
+            }
+        }
+
+        free(left_temp);
+        free(right_temp);
+    }
+
+    return true;
 }
 
 dyn_arr_t *dyn_arr_create(size_t min_size)
@@ -64,7 +167,7 @@ void dyn_arr_free(dyn_arr_t *dyn_arr)
     free(dyn_arr);
 }
 
-bool dyn_arr_insert(dyn_arr_t *dyn_arr, size_t index, DATA item)
+bool dyn_arr_set(dyn_arr_t *dyn_arr, size_t index, DATA item)
 {
     if (!dyn_arr)
         return false;
