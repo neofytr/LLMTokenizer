@@ -94,3 +94,11 @@ bool dyn_arr_insert(dyn_arr_t *dyn_arr, size_t index, DATA item)
     dyn_arr->nodes[node_no][node_index] = item;
     return true;
 }
+
+DATA dyn_arr_get(dyn_arr_t *dyn_arr, size_t index)
+{
+    size_t node_no = index / MAX_NODE_SIZE;
+    size_t node_index = index & (MAX_NODE_SIZE - 1);
+
+    return dyn_arr->nodes[node_no][node_index];
+}
