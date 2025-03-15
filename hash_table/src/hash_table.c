@@ -1,37 +1,6 @@
-#ifndef HASH_TABLE_H
-#define HASH_TABLE_H
+#include "../inc/hash_table.h"
 
-#include <stdlib.h>
-#include <stdbool.h>
-#include <stdint.h>
 #include <string.h>
-
-typedef struct node
-{
-    void *key;
-    void *value;
-    struct node *next;
-} node_t;
-
-typedef struct
-{
-    size_t num_of_buckets; // number of buckets you want in the hashtable
-    size_t key_size;
-    size_t value_size;
-    node_t **buckets; // each bucket is a linked list of nodes
-} hash_table_t;
-
-hash_table_t *hash_table_create(size_t num_of_buckets, size_t key_size, size_t value_size); // number of buckets you want in the hashtable
-                                                                                            // each bucket is a linked list of nodes
-void hash_table_destroy(hash_table_t *table);
-
-bool hash_table_insert(hash_table_t *table, const void *key, const void *value);
-bool hash_table_delete(hash_table_t *table, const void *key);
-bool hash_table_search(hash_table_t *table, const void *key, void *value);
-
-#endif
-
-#ifdef HASH_TABLE_IMPLEMENTATION
 
 static inline unsigned long djb2_hash(const void *key, size_t key_size)
 {
@@ -190,5 +159,3 @@ bool hash_table_search(hash_table_t *table, const void *key, void *value)
 
     return false;
 }
-
-#endif
