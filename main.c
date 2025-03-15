@@ -127,7 +127,7 @@ int main(int argc, char **argv)
     int text_size = strlen(text_buffer);
     uint8_t *text = (uint8_t *)text_buffer;
 
-    int max_iterations = 1000;
+    int max_iterations = 100; // default
     if (argc > 2)
     {
         max_iterations = atoi(argv[2]);
@@ -223,7 +223,7 @@ int main(int argc, char **argv)
             }
         }
 
-        if (!index)
+        if (index <= 1)
         {
             dyn_arr_free(node_arr);
             hash_table_destroy(table);
@@ -257,13 +257,11 @@ int main(int argc, char **argv)
             goto error_handling;
         }
 
-        printf("Iteration %d: Replacing pair (%u, %u) with symbol %u, frequency %u\n",
-               iteration, new_pair.a, new_pair.b, next_symbol, max.freq);
-
         text_size = replace_pairs(text, text_size, new_pair, next_symbol);
         if (text_size == -1)
         {
             exit_code = EXIT_FAILURE;
+            free(text);
             dyn_arr_free(node_arr);
             hash_table_destroy(table);
             goto error_handling;
@@ -282,6 +280,53 @@ int main(int argc, char **argv)
         goto error_handling;
     }
 
+    /*
+     * Compressed File Format ("compressed.bin")
+     *
+     * The file consists of:
+     *
+     * 1. Dictionary Size (4 bytes)
+     *    - Type: uint32_t
+     *    - Represents the total number of symbols used in the compression process.
+     *    - The first 256 symbols (0-255) are standard byte values.
+     *    - Symbols 256 and above represent merged pairs from the compression process.
+     *
+     * 2. Dictionary Entries ((dict_size - 256) * sizeof(pair_t))
+     *    - Type: struct pair_t { uint32_t a, b; } (8 bytes per entry)
+     *    - Each entry maps a new symbol (256 and above) to a pair of previous symbols.
+     *    - The number of entries is (dict_size - 256).
+     *    - Example:
+     *        - Symbol 256 → (97, 98)  // 'a' and 'b' merged into 256
+     *        - Symbol 257 → (256, 99) // 256 ('ab') and 'c' merged into 257
+     *
+     * 3. Compressed Text Size (4 bytes)
+     *    - Type: int
+     *    - Represents the length of the compressed text in bytes.
+     *
+     * 4. Compressed Text (text_size bytes)
+     *    - Type: uint8_t[]
+     *    - The actual compressed data, where frequent pairs have been replaced
+     *      with new symbols.
+     *    - This sequence can be decompressed using the dictionary.
+     *
+     * File Layout Example (assuming 270 symbols were used):
+     *
+     * -----------------------------------------------------
+     * | Dictionary Size (uint32_t)     | 270              |
+     * -----------------------------------------------------
+     * | Dictionary Entries (pair_t[])  | (dict_size - 256)|
+     * -----------------------------------------------------
+     * | Compressed Text Size (int)     | text_size        |
+     * -----------------------------------------------------
+     * | Compressed Text (uint8_t[])    | text_size bytes  |
+     * -----------------------------------------------------
+     *
+     * Decompression Process:
+     * - Read the dictionary size and reconstruct symbol mappings.
+     * - Read the compressed text size.
+     * - Decode the text by recursively expanding symbols using the dictionary.
+     */
+
     uint32_t dict_size = next_symbol;
     fwrite(&dict_size, sizeof(uint32_t), 1, output);
 
@@ -299,12 +344,10 @@ int main(int argc, char **argv)
     }
 
     fwrite(&text_size, sizeof(int), 1, output);
-
     fwrite(text, 1, text_size, output);
-
     fclose(output);
 
-    printf("Compression complete");
+    printf("Compression complete\n");
 
 error_handling:
     if (pair_arr)
