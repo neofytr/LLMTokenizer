@@ -95,7 +95,7 @@ void print_text(const uint32_t *text, int length)
     printf("\n");
 }
 
-void print_graph(dyn_arr_t *pair_arr, size_t len, const char *png_name)
+void print_graph(dyn_arr_t *pair_arr, size_t len, const char *png_name, bool add_ascii)
 {
     FILE *temp_file = fopen("temp_graph.dot", "w");
     if (!temp_file)
@@ -105,13 +105,27 @@ void print_graph(dyn_arr_t *pair_arr, size_t len, const char *png_name)
     }
 
     fprintf(temp_file, "digraph Pairs {\n");
-    for (uint32_t index = 256; index < len; index++)
+    if (add_ascii)
     {
-        pair_t pair;
-        dyn_arr_get(pair_arr, index, (void *)&pair);
-        fprintf(temp_file, "%u -> %u;\n", index, pair.a);
-        fprintf(temp_file, "%u -> %u;\n", index, pair.b);
+        for (uint32_t index = 0; index < len; index++)
+        {
+            pair_t pair;
+            dyn_arr_get(pair_arr, index, (void *)&pair);
+            fprintf(temp_file, "%u -> %u;\n", index, pair.a);
+            fprintf(temp_file, "%u -> %u;\n", index, pair.b);
+        }
     }
+    else
+    {
+        for (uint32_t index = 256; index < len; index++)
+        {
+            pair_t pair;
+            dyn_arr_get(pair_arr, index, (void *)&pair);
+            fprintf(temp_file, "%u -> %u;\n", index, pair.a);
+            fprintf(temp_file, "%u -> %u;\n", index, pair.b);
+        }
+    }
+
     fprintf(temp_file, "}\n");
     fclose(temp_file);
 
@@ -315,7 +329,7 @@ int main(int argc, char **argv)
         hash_table_destroy(table);
     }
 
-    print_graph(pair_arr, next_symbol, "graph.png");
+    print_graph(pair_arr, next_symbol, "graph.png", false);
 
 error_handling:
     if (pair_arr)
