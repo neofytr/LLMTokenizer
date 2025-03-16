@@ -283,6 +283,54 @@ dyn_arr_t *read_pairs(const char *path)
     return pair_arr;
 }
 
+char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr)
+{
+#define INIT_LEN (4096)
+    char *str = (char *)malloc(sizeof(char) * INIT_LEN);
+    if (!str)
+    {
+        return NULL;
+    }
+
+    size_t str_pos = 0;
+    size_t str_capacity = INIT_LEN;
+    str[0] = '\0'; // initialize as empty string
+
+    for (size_t index = 0; index < len; index++)
+    {
+        char *res_pair = resolve_pair(encoding[index], pair_arr);
+        if (!res_pair)
+        {
+            free(str);
+            return NULL;
+        }
+
+        size_t pair_len = strlen(res_pair);
+        if (str_pos + pair_len + 1 >= str_capacity) // +1 for null terminator
+        {
+            size_t new_capacity = 2 * (str_capacity + pair_len);
+            char *new_str = realloc(str, new_capacity);
+            if (!new_str)
+            {
+                free(res_pair);
+                free(str);
+                return NULL;
+            }
+            str = new_str;
+            str_capacity = new_capacity;
+        }
+
+        // copy the pair to the end of str
+        strcpy(str + str_pos, res_pair);
+        str_pos += pair_len;
+
+        free(res_pair);
+    }
+
+    return str;
+#undef INIT_LEN
+}
+
 dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 {
     if (!path)
@@ -483,30 +531,4 @@ error_handling:
     }
 
     return NULL;
-}
-
-int main(int argc, char **argv)
-{
-    if (argc < 2)
-    {
-        fprintf(stderr, "Usage: %s <file_path>\n", argv[0]);
-        return EXIT_FAILURE;
-    }
-
-    uint32_t *text;
-    size_t text_len;
-
-    dyn_arr_t *pair_arr = compress(argv[1], &text, &text_len);
-    if (!pair_arr)
-    {
-        return EXIT_FAILURE;
-    }
-
-    print_text(text, text_len);
-    print_graph(pair_arr, "graph.png", false);
-    render_pairs(pair_arr);
-
-    free(text);
-    dyn_arr_free(pair_arr);
-    return EXIT_SUCCESS;
 }

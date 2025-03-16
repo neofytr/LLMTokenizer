@@ -30,7 +30,9 @@ void print_text(const uint32_t *text, int length);
 void print_graph(dyn_arr_t *pair_arr, const char *png_name, bool add_ascii);
 
 dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len);
+char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr);
 void render_pairs(dyn_arr_t *pair_arr);
+char *resolve_pair(uint32_t pair_index, dyn_arr_t *pair_arr);
 
 bool is_less(const void *a, const void *b);
 
