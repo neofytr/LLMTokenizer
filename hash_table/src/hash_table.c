@@ -79,6 +79,20 @@ hash_table_t *hash_table_merge(hash_table_t **hash_table_arr, size_t len, hash_v
         return NULL;
     }
 
+    uint8_t *value = (uint8_t *)malloc(value_size);
+    if (!value)
+    {
+        hash_table_destroy(merged_table);
+        return NULL;
+    }
+
+    uint8_t *new_val = (uint8_t *)malloc(value_size);
+    if (!new_val)
+    {
+        hash_table_destroy(merged_table);
+        return NULL;
+    }
+
     for (size_t index = 0; index < len; index++)
     {
         hash_table_t *table = hash_table_arr[index];
@@ -87,7 +101,6 @@ hash_table_t *hash_table_merge(hash_table_t **hash_table_arr, size_t len, hash_v
             node_t *curr = table->buckets[counter];
             while (curr)
             {
-                uint8_t value[value_size];
                 if (!hash_table_search(merged_table, curr->key, (void *)value))
                 {
                     if (!hash_table_insert(merged_table, curr->key, curr->value))
@@ -98,7 +111,6 @@ hash_table_t *hash_table_merge(hash_table_t **hash_table_arr, size_t len, hash_v
                 }
                 else
                 {
-                    uint8_t new_val[value_size];
                     if (!add_value((void *)value, curr->value, (void *)new_val))
                     {
                         hash_table_destroy(merged_table);
@@ -117,6 +129,8 @@ hash_table_t *hash_table_merge(hash_table_t **hash_table_arr, size_t len, hash_v
         }
     }
 
+    free(value);
+    free(new_val);
     return merged_table;
 }
 

@@ -417,10 +417,11 @@ static void *get_freq(void *arg)
 
     if (!text_arr || !text_table)
     {
+        free(text_struct);
         return NULL;
     }
 
-    for (int i = 0; i < text_size - 1; i++)
+    for (size_t i = 0; i < text_size - 1; i++)
     {
         pair_t pair = {text_arr[i], text_arr[i + 1]};
         size_t count = 0;
@@ -430,21 +431,34 @@ static void *get_freq(void *arg)
         if (!hash_table_insert(text_table, &pair, &count))
         {
             perror("hash_table_insert");
-            hash_table_destroy(text_table);
         }
     }
+
+    free(text_arr);
+    free(text_struct);
 
     return (void *)1;
 }
 
+bool val_add(const void *val_one, const void *val_two, const void *result)
+{
+    if (!val_one || !val_two || !result)
+    {
+        return false;
+    }
+
+    size_t size_one = *(size_t *)val_one;
+    size_t size_two = *(size_t *)val_two;
+
+    size_t res = size_one + size_two;
+    *(size_t *)result = res;
+
+    return true;
+}
+
 dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 {
-
-#include <time.h>
-
-    clock_t begin;
-
-    if (!path)
+    if (!path || !encoding || !len)
     {
         return NULL;
     }
@@ -455,26 +469,28 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         return NULL;
     }
 
-    int original_text_size = strlen(text_buffer);
-    int text_size = original_text_size;
+    size_t original_text_size = strlen(text_buffer);
+    size_t text_size = original_text_size;
 
     if (text_size < 2)
     {
         printf("Error: File contains less than 2 characters\n");
+        free(text_buffer);
         return NULL;
     }
 
-    // convert char array to uint32_t array
     uint32_t *text = (uint32_t *)malloc(text_size * sizeof(uint32_t));
     uint32_t *temp = (uint32_t *)malloc(text_size * sizeof(uint32_t));
     if (!text || !temp)
     {
         perror("malloc");
         free(text_buffer);
+        free(text); // Free if allocated
+        free(temp); // Free if allocated
         return NULL;
     }
 
-    for (int i = 0; i < text_size; i++)
+    for (size_t i = 0; i < text_size; i++)
     {
         text[i] = (uint32_t)(uint8_t)text_buffer[i];
         temp[i] = (uint32_t)(uint8_t)text_buffer[i];
@@ -483,8 +499,9 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
     free(text_buffer);
 
     uint32_t next_symbol = 256;
+    dyn_arr_t *pair_arr = NULL;
 
-    dyn_arr_t *pair_arr = dyn_arr_create(512, sizeof(pair_t));
+    pair_arr = dyn_arr_create(512, sizeof(pair_t));
     if (!pair_arr)
     {
         perror("dyn_arr_create");
@@ -508,18 +525,13 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
     for (size_t iteration = 0;; iteration++)
     {
-        printf("\n\n");
-        printf("Iteration: %zu\n", iteration);
 
-        hash_table_t *table = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
-        if (!table)
-        {
-            perror("hash_table_create");
-            goto error_handling;
-        }
-
+        printf("\n\niteration: %zu\n", iteration);
 #define THREAD_NO (16)
 
+        clock_t begin;
+
+        PROFILE_BEGIN(begin);
         pthread_t worker_threads[THREAD_NO];
         pthread_attr_t attr;
 
@@ -527,35 +539,117 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
 
         size_t per_thread_text_len = text_size / THREAD_NO;
-        size_t last_thread_excess = text_size & (THREAD_NO - 1);
+        size_t last_thread_excess = text_size % THREAD_NO;
+
+        hash_table_t *table_arr[THREAD_NO];
+        memset(table_arr, 0, sizeof(table_arr));
 
         for (size_t index = 0; index < THREAD_NO; index++)
         {
-
-            pthread_create(&worker_threads[index], &attr, get_freq, );
-        }
-
-        PROFILE_BEGIN(begin);
-        // prepare frequency of each pair
-        for (int i = 0; i < text_size - 1; i++)
-        {
-            pair_t pair = {text[i], text[i + 1]};
-            size_t count = 0;
-
-            hash_table_search(table, &pair, &count);
-            count++;
-            if (!hash_table_insert(table, &pair, &count))
+            text_t *text_struct = (text_t *)malloc(sizeof(text_t));
+            if (!text_struct)
             {
-                perror("hash_table_insert");
-                hash_table_destroy(table);
+                perror("malloc text_struct");
+                for (size_t i = 0; i < index; i++)
+                {
+                    if (table_arr[i])
+                    {
+                        hash_table_destroy(table_arr[i]);
+                    }
+                }
+                goto error_handling;
+            }
+
+            size_t offset = index * per_thread_text_len;
+
+            if (index == THREAD_NO - 1)
+            {
+                text_struct->len = last_thread_excess + per_thread_text_len;
+            }
+            else
+            {
+                text_struct->len = per_thread_text_len;
+            }
+
+            text_struct->text_arr = (uint32_t *)malloc(sizeof(uint32_t) * text_struct->len);
+            if (!text_struct->text_arr)
+            {
+                perror("malloc text_arr");
+                free(text_struct);
+                for (size_t i = 0; i < index; i++)
+                {
+                    if (table_arr[i])
+                    {
+                        hash_table_destroy(table_arr[i]);
+                    }
+                }
+                goto error_handling;
+            }
+
+            memcpy(text_struct->text_arr, text + offset, text_struct->len * sizeof(uint32_t));
+
+            text_struct->text_table = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
+            if (!text_struct->text_table)
+            {
+                perror("hash_table_create");
+                free(text_struct->text_arr);
+                free(text_struct);
+                for (size_t i = 0; i < index; i++)
+                {
+                    if (table_arr[i])
+                    {
+                        hash_table_destroy(table_arr[i]);
+                    }
+                }
+                goto error_handling;
+            }
+
+            table_arr[index] = text_struct->text_table;
+            if (pthread_create(&worker_threads[index], &attr, get_freq, (void *)text_struct) != 0)
+            {
+                perror("pthread_create");
+                hash_table_destroy(text_struct->text_table);
+                free(text_struct->text_arr);
+                free(text_struct);
+                for (size_t i = 0; i <= index; i++)
+                {
+                    if (table_arr[i])
+                    {
+                        hash_table_destroy(table_arr[i]);
+                    }
+                }
                 goto error_handling;
             }
         }
-        PROFILE_END(begin, "Frequency preparation time");
 
-#undef THREAD_NO
+        pthread_attr_destroy(&attr);
 
-        // create a dynamic array to store pair-frequency data retrived from text
+        for (size_t index = 0; index < THREAD_NO; index++)
+        {
+            void *status;
+            pthread_join(worker_threads[index], &status);
+        }
+
+        hash_table_t *table = hash_table_merge(table_arr, THREAD_NO, val_add, sizeof(pair_t), sizeof(size_t), 2048);
+        if (!table)
+        {
+            for (size_t i = 0; i < THREAD_NO; i++)
+            {
+                hash_table_destroy(table_arr[i]);
+                table_arr[i] = NULL;
+            }
+
+            goto error_handling;
+        }
+
+        for (size_t i = 0; i < THREAD_NO; i++)
+        {
+            hash_table_destroy(table_arr[i]);
+            table_arr[i] = NULL;
+        }
+
+        PROFILE_END(begin, "Frequency calculation time:");
+
         dyn_arr_t *node_arr = dyn_arr_create(0, sizeof(pair_freq_t));
         if (!node_arr)
         {
@@ -564,7 +658,6 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
-        // feed the pair-frequency data into a dynamic array
         size_t index = 0;
         for (size_t i = 0; i < table->num_of_buckets; i++)
         {
@@ -572,8 +665,8 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             while (curr)
             {
                 pair_freq_t temp;
-                pair_t *pair = curr->key;
-                size_t *freq = curr->value;
+                pair_t *pair = (pair_t *)curr->key;
+                size_t *freq = (size_t *)curr->value;
 
                 temp.pair.a = pair->a;
                 temp.pair.b = pair->b;
@@ -591,7 +684,6 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             }
         }
 
-        // no pairs found; text with 0 or 1 element
         if (!index)
         {
             dyn_arr_free(node_arr);
@@ -599,7 +691,6 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             break;
         }
 
-        // find the pair-freq node with the maximum frequency
         pair_freq_t max;
         if (!dyn_arr_max(node_arr, 0, index - 1, is_less, &max))
         {
@@ -609,7 +700,6 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
-        // stop the process if the max frequency of all nodes is 1
         if (max.freq <= 1)
         {
             dyn_arr_free(node_arr);
@@ -617,8 +707,6 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             break;
         }
 
-        // add the max frequency pair to the pair array
-        // the index of this max frequency pair is it's pair ID
         pair_t new_pair = max.pair;
         if (!dyn_arr_set(pair_arr, next_symbol, &new_pair))
         {
@@ -628,15 +716,14 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
-        PROFILE_BEGIN(begin);
-        // replace the max frequency pair in the text with it's pair ID
-        int new_text_size = 0;
-        for (int i = 0; i < text_size; i++)
+        begin = clock();
+        size_t new_text_size = 0;
+        for (size_t i = 0; i < text_size; i++)
         {
             if (i < text_size - 1 && text[i] == new_pair.a && text[i + 1] == new_pair.b)
             {
                 temp[new_text_size++] = next_symbol;
-                i++; // skip the next character as it's part of the pair
+                i++;
             }
             else
             {
@@ -644,7 +731,6 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             }
         }
 
-        // swap pointers
         uint32_t *swap = text;
         text = temp;
         temp = swap;
@@ -652,27 +738,21 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
         next_symbol++;
 
-        PROFILE_END(begin, "Replacement time");
-
         dyn_arr_free(node_arr);
         hash_table_destroy(table);
-
-        printf("\n");
-        printf("iteration %zu finished!\n", iteration);
-        printf("pair array length: %zu\n", pair_arr->last_index + 1);
-        printf("encoded text size: %d\n", text_size);
     }
 
     *encoding = text;
     *len = text_size;
     free(temp);
 
-    // resize the encoded text into it's requisite size
-    *encoding = realloc(*encoding, *len);
-    if (!encoding)
+    uint32_t *new_encoding = realloc(*encoding, *len * sizeof(uint32_t));
+    if (!new_encoding)
     {
         goto error_handling;
     }
+    *encoding = new_encoding;
+
     return pair_arr;
 
 error_handling:
@@ -688,6 +768,9 @@ error_handling:
     {
         free(temp);
     }
-
+    *encoding = NULL;
+    *len = 0;
     return NULL;
 }
+
+#undef THREAD_NO
