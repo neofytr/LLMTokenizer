@@ -394,6 +394,12 @@ char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr)
 
 dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 {
+
+#include <time.h>
+
+    clock_t start, end, total_start, total_end;
+    double cpu_time_used;
+
     if (!path)
     {
         return NULL;
@@ -458,6 +464,11 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
     for (size_t iteration = 0;; iteration++)
     {
+        printf("\n\n");
+        printf("Iteration: %zu\n", iteration);
+
+        total_start = clock();
+
         hash_table_t *table = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
         if (!table)
         {
@@ -465,6 +476,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
+        start = clock();
         // prepare frequency of each pair
         for (int i = 0; i < text_size - 1; i++)
         {
@@ -480,6 +492,9 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
                 goto error_handling;
             }
         }
+        end = clock();
+
+        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
 
         // create a dynamic array to store pair-frequency data retrived from text
         dyn_arr_t *node_arr = dyn_arr_create(0, sizeof(pair_freq_t));
@@ -580,10 +595,14 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         dyn_arr_free(node_arr);
         hash_table_destroy(table);
 
+        total_end = clock();
+
         printf("\n\n");
         printf("iteration %zu finished!\n", iteration);
         printf("pair array length: %zu\n", pair_arr->last_index + 1);
         printf("encoded text size: %d\n", text_size);
+        printf("total time taken: %lf seconds\n", (double)(total_end - total_start) / CLOCKS_PER_SEC);
+        printf("Time for frequency preparation: %lf seconds\n", cpu_time_used);
     }
 
     *encoding = text;
