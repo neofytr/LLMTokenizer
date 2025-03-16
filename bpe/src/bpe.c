@@ -406,7 +406,7 @@ char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr)
         fprintf(stdout, "%s: %lf seconds\n", (label), elapsed); \
     } while (0)
 
-#define THREAD_NO 24
+#define THREAD_NO 16
 
 static uint32_t *text;
 static uint32_t *temp;
@@ -422,6 +422,11 @@ static int terminate = 0;
 
 static pthread_barrier_t barrier;
 
+#define CHUNK_SIZE (64 * 1024)
+
+static size_t next_chunk_index;
+static pthread_mutex_t chunk_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 static void *get_freq(void *arg)
 {
     size_t thread_idx = (size_t)arg;
@@ -429,7 +434,7 @@ static void *get_freq(void *arg)
 
     while (true)
     {
-        // the newly created threads wait here until the main thread enters it's first barrier
+        // wait for main thread to signal start of new iteration
         pthread_barrier_wait(&barrier);
 
         pthread_mutex_lock(&mutex);
@@ -441,24 +446,84 @@ static void *get_freq(void *arg)
         local_iteration = current_iteration;
         pthread_mutex_unlock(&mutex);
 
-        size_t per_thread_len = text_size / THREAD_NO;
-        size_t start_index = thread_idx * per_thread_len;
-        size_t chunk_len = (thread_idx == THREAD_NO - 1) ? (per_thread_len + text_size % THREAD_NO) : per_thread_len;
-
-        for (size_t i = start_index; i < start_index + chunk_len; i++)
+        // adaptive chunk size based on text size and thread count
+        size_t adaptive_chunk_size;
+        pthread_mutex_lock(&chunk_mutex);
+        // for small text sizes, revert to simple thread division
+        if (text_size < CHUNK_SIZE * THREAD_NO)
         {
-            if (i + 1 >= text_size)
-                break;
+            size_t per_thread_len = text_size / THREAD_NO;
+            size_t start_index = thread_idx * per_thread_len;
+            size_t chunk_len = (thread_idx == THREAD_NO - 1) ? (per_thread_len + text_size % THREAD_NO) : per_thread_len;
 
-            pair_t pair = {text[i], text[i + 1]};
-            size_t count = 0;
+            // process this chunk only if it has data
+            if (chunk_len > 0)
+            {
+                pthread_mutex_unlock(&chunk_mutex);
 
-            hash_table_search(thread_tables[thread_idx], &pair, &count);
-            count++;
-            hash_table_insert(thread_tables[thread_idx], &pair, &count);
+                for (size_t i = start_index; i < start_index + chunk_len; i++)
+                {
+                    if (i + 1 >= text_size)
+                        break;
+
+                    pair_t pair = {text[i], text[i + 1]};
+                    size_t count = 0;
+
+                    hash_table_search(thread_tables[thread_idx], &pair, &count);
+                    count++;
+                    hash_table_insert(thread_tables[thread_idx], &pair, &count);
+                }
+            }
+            else
+            {
+                pthread_mutex_unlock(&chunk_mutex);
+            }
+        }
+        // for larger text sizes, use dynamic chunking
+        else
+        {
+            adaptive_chunk_size = CHUNK_SIZE;
+            pthread_mutex_unlock(&chunk_mutex);
+
+            while (true)
+            {
+                // get next chunk to process
+                size_t start_index;
+                size_t chunk_len;
+
+                pthread_mutex_lock(&chunk_mutex);
+                start_index = next_chunk_index;
+                if (start_index >= text_size)
+                {
+                    // no more chunks available
+                    pthread_mutex_unlock(&chunk_mutex);
+                    break;
+                }
+
+                // calculate chunk length (might be smaller for the last chunk)
+                chunk_len = (start_index + adaptive_chunk_size > text_size) ? (text_size - start_index) : adaptive_chunk_size;
+
+                // update next chunk index for other threads
+                next_chunk_index += chunk_len;
+                pthread_mutex_unlock(&chunk_mutex);
+
+                // process current chunk
+                for (size_t i = start_index; i < start_index + chunk_len; i++)
+                {
+                    if (i + 1 >= text_size)
+                        break;
+
+                    pair_t pair = {text[i], text[i + 1]};
+                    size_t count = 0;
+
+                    hash_table_search(thread_tables[thread_idx], &pair, &count);
+                    count++;
+                    hash_table_insert(thread_tables[thread_idx], &pair, &count);
+                }
+            }
         }
 
-        // signal to the main thread that the thread is completed
+        // signal to the main thread that this thread is completed
         pthread_barrier_wait(&barrier);
     }
 
@@ -604,9 +669,19 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
     for (size_t iteration = 0;; iteration++)
     {
+        printf("\n\niteration %zu\n", iteration);
+
+        struct timespec begin;
+
+        PROFILE_BEGIN_TS(begin);
+
         pthread_mutex_lock(&mutex);
         current_iteration = iteration;
         pthread_mutex_unlock(&mutex);
+
+        pthread_mutex_lock(&chunk_mutex);
+        next_chunk_index = 0; // reset the chunk index at the start of each iteration
+        pthread_mutex_unlock(&chunk_mutex);
 
         // signal the threads to start this iteration
         // this is a signal since all the other threads would be waiting on their first barrier for the main thread
@@ -616,6 +691,8 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         // the main thread will wait on this barrier until all the others have completed, signalling main to
         // continue it's execution
         pthread_barrier_wait(&barrier);
+
+        PROFILE_END_TS(begin, "Frequency collection time");
 
         table = hash_table_merge(thread_tables, THREAD_NO, val_add,
                                  sizeof(pair_t), sizeof(size_t), 2048);

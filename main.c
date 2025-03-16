@@ -17,7 +17,7 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-    print_text(text, text_len);
+    // print_text(text, text_len);
 
     free(text);
     dyn_arr_free(pair_arr);
