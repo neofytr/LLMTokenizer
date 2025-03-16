@@ -57,6 +57,31 @@ void hash_table_destroy(hash_table_t *table)
     free(table);
 }
 
+hash_table_t *hash_table_merge(hash_table_t **hash_table_arr, size_t len, hash_value_add add_value, size_t key_size, size_t value_size, size_t new_bucket_num)
+{
+    if (!hash_table_arr)
+    {
+        return NULL;
+    }
+
+    for (size_t index = 0; index < len; index++)
+    {
+        hash_table_t *table = hash_table_arr[index];
+        if (!table || (table->key_size != key_size) || (table->value_size != value_size))
+        {
+            return NULL;
+        }
+    }
+
+    hash_table_t *merged_table = hash_table_create(new_bucket_num, key_size, value_size);
+    if (!merged_table)
+    {
+        return NULL;
+    }
+
+    
+}
+
 bool hash_table_insert(hash_table_t *table, const void *key, const void *value)
 {
     if (!table || !key || !value)
