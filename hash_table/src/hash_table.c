@@ -31,6 +31,7 @@ hash_table_t *hash_table_create(size_t num_of_buckets, size_t key_size, size_t v
 
     table->value_size = value_size;
     table->key_size = key_size;
+    table->free_nodes = NULL;
 
     return table;
 }
@@ -51,6 +52,16 @@ void hash_table_destroy(hash_table_t *table)
             free(current);
             current = next;
         }
+    }
+
+    node_t *current = table->free_nodes;
+    while (current)
+    {
+        node_t *next = current->next;
+        free(current->key);
+        free(current->value);
+        free(current);
+        current = next;
     }
 
     free(table->buckets);
@@ -89,6 +100,7 @@ hash_table_t *hash_table_merge(hash_table_t **hash_table_arr, size_t len, hash_v
     uint8_t *new_val = (uint8_t *)malloc(value_size);
     if (!new_val)
     {
+        free(value);
         hash_table_destroy(merged_table);
         return NULL;
     }
@@ -101,29 +113,37 @@ hash_table_t *hash_table_merge(hash_table_t **hash_table_arr, size_t len, hash_v
             node_t *curr = table->buckets[counter];
             while (curr)
             {
-                if (!hash_table_search(merged_table, curr->key, (void *)value))
+                if (!curr->is_free)
                 {
-                    if (!hash_table_insert(merged_table, curr->key, curr->value))
+                    if (!hash_table_search(merged_table, curr->key, (void *)value))
                     {
-                        hash_table_destroy(merged_table);
-                        return NULL;
+                        if (!hash_table_insert(merged_table, curr->key, curr->value))
+                        {
+                            free(value);
+                            free(new_val);
+                            hash_table_destroy(merged_table);
+                            return NULL;
+                        }
+                    }
+                    else
+                    {
+                        if (!add_value((void *)value, curr->value, (void *)new_val))
+                        {
+                            free(value);
+                            free(new_val);
+                            hash_table_destroy(merged_table);
+                            return NULL;
+                        }
+
+                        if (!hash_table_insert(merged_table, curr->key, new_val))
+                        {
+                            free(value);
+                            free(new_val);
+                            hash_table_destroy(merged_table);
+                            return NULL;
+                        }
                     }
                 }
-                else
-                {
-                    if (!add_value((void *)value, curr->value, (void *)new_val))
-                    {
-                        hash_table_destroy(merged_table);
-                        return NULL;
-                    }
-
-                    if (!hash_table_insert(merged_table, curr->key, new_val))
-                    {
-                        hash_table_destroy(merged_table);
-                        return NULL;
-                    }
-                }
-
                 curr = curr->next;
             }
         }
@@ -144,7 +164,7 @@ bool hash_table_insert(hash_table_t *table, const void *key, const void *value)
     node_t *current = table->buckets[hash];
     while (current)
     {
-        if (!memcmp(current->key, key, table->key_size))
+        if (!current->is_free && !memcmp(current->key, key, table->key_size))
         {
             memcpy(current->value, value, table->value_size);
             return true;
@@ -152,37 +172,32 @@ bool hash_table_insert(hash_table_t *table, const void *key, const void *value)
         current = current->next;
     }
 
-    // before creating a new entry, check to see if we can find an empty entry in the same bucket
-    while (current)
+    node_t *new_node = NULL;
+    if (table->free_nodes)
     {
-        if (current->is_free)
+        new_node = table->free_nodes;
+        table->free_nodes = new_node->next;
+    }
+    else
+    {
+        new_node = malloc(sizeof(node_t));
+        if (!new_node)
+            return false;
+
+        new_node->key = malloc(table->key_size);
+        if (!new_node->key)
         {
-            memcpy(current->value, value, table->value_size);
-            memcpy(current->key, key, table->key_size);
-            current->is_free = false;
-            return true;
+            free(new_node);
+            return false;
         }
 
-        current = current->next;
-    }
-
-    node_t *new_node = malloc(sizeof(node_t));
-    if (!new_node)
-        return false;
-
-    new_node->key = malloc(table->key_size);
-    if (!new_node->key)
-    {
-        free(new_node);
-        return false;
-    }
-
-    new_node->value = malloc(table->value_size);
-    if (!new_node->value)
-    {
-        free(new_node->key);
-        free(new_node);
-        return false;
+        new_node->value = malloc(table->value_size);
+        if (!new_node->value)
+        {
+            free(new_node->key);
+            free(new_node);
+            return false;
+        }
     }
 
     memcpy(new_node->key, key, table->key_size);
@@ -205,12 +220,21 @@ bool hash_table_clear(hash_table_t *table)
 
     for (size_t index = 0; index < table->num_of_buckets; index++)
     {
-        node_t *curr = (node_t *)table->buckets[index];
+        node_t *curr = table->buckets[index];
         while (curr)
         {
-            curr->is_free = true;
-            curr = curr->next;
+            node_t *next = curr->next;
+
+            if (!curr->is_free)
+            {
+                curr->is_free = true;
+                curr->next = table->free_nodes;
+                table->free_nodes = curr;
+            }
+
+            curr = next;
         }
+        table->buckets[index] = NULL;
     }
 
     return true;
@@ -230,7 +254,7 @@ bool hash_table_delete(hash_table_t *table, const void *key)
 
     while (current)
     {
-        if (!memcmp(current->key, key, table->key_size))
+        if (!current->is_free && !memcmp(current->key, key, table->key_size))
         {
             if (prev)
             {
@@ -242,6 +266,9 @@ bool hash_table_delete(hash_table_t *table, const void *key)
             }
 
             current->is_free = true;
+            current->next = table->free_nodes;
+            table->free_nodes = current;
+
             return true;
         }
 
@@ -262,7 +289,7 @@ bool hash_table_search(hash_table_t *table, const void *key, void *value)
     node_t *current = table->buckets[hash];
     while (current)
     {
-        if (memcmp(current->key, key, table->key_size) == 0)
+        if (!current->is_free && !memcmp(current->key, key, table->key_size))
         {
             memcpy(value, current->value, table->value_size);
             return true;

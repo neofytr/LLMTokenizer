@@ -416,7 +416,8 @@ static pthread_t worker_threads[THREAD_NO] = {0};
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-int ready = 0;
+static int ready = 0;
+static int iteration_count = 0;
 
 static pthread_mutex_t signal_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t signal_cond = PTHREAD_COND_INITIALIZER;
@@ -425,17 +426,23 @@ static size_t signal_count = 0;
 static void *get_freq(void *arg)
 {
     size_t thread_idx = (size_t)arg;
+    int current_iteration = -1;
 
     while (true)
     {
         pthread_mutex_lock(&mutex);
-        pthread_cond_wait(&cond, &mutex);
+        while (current_iteration == iteration_count && ready != -1)
+        {
+            pthread_cond_wait(&cond, &mutex);
+        }
 
         if (ready == -1)
         {
             pthread_mutex_unlock(&mutex);
             return (void *)1;
         }
+
+        current_iteration = iteration_count;
         pthread_mutex_unlock(&mutex);
 
         size_t per_thread_len = text_size / THREAD_NO;
@@ -457,7 +464,7 @@ static void *get_freq(void *arg)
 
         pthread_mutex_lock(&signal_mutex);
         signal_count++;
-        pthread_cond_signal(&signal_cond);
+        pthread_cond_broadcast(&signal_cond);
         pthread_mutex_unlock(&signal_mutex);
     }
 
@@ -596,13 +603,12 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
     for (size_t iteration = 0;; iteration++)
     {
-        printf("\n\niteration: %zu\n", iteration);
-        struct timespec begin;
-        PROFILE_BEGIN_TS(begin);
-
+        pthread_mutex_lock(&signal_mutex);
         signal_count = 0;
+        pthread_mutex_unlock(&signal_mutex);
 
         pthread_mutex_lock(&mutex);
+        iteration_count++;
         ready = 1;
         pthread_cond_broadcast(&cond);
         pthread_mutex_unlock(&mutex);
@@ -636,11 +642,8 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
-        // clear the hash tables for future use
         for (size_t i = 0; i < THREAD_NO; i++)
             hash_table_clear(thread_tables[i]);
-
-        PROFILE_END_TS(begin, "Frequency calculation time:");
 
         dyn_arr_t *node_arr = dyn_arr_create(0, sizeof(pair_freq_t));
         if (!node_arr)
@@ -751,6 +754,9 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         pthread_join(worker_threads[i], &status);
     }
 
+    for (size_t i = 0; i < THREAD_NO; i++)
+        hash_table_destroy(thread_tables[i]);
+
     return pair_arr;
 
 error_handling:
@@ -770,6 +776,9 @@ error_handling:
             }
         }
     }
+
+    for (size_t i = 0; i < THREAD_NO; i++)
+        hash_table_destroy(thread_tables[i]);
 
     if (pair_arr)
         dyn_arr_free(pair_arr);
