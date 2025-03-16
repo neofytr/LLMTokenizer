@@ -417,32 +417,28 @@ static pthread_t worker_threads[THREAD_NO] = {0};
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 static int ready = 0;
-static int iteration_count = 0;
+static int current_iteration = 0;
+static int terminate = 0;
 
-static pthread_mutex_t signal_mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t signal_cond = PTHREAD_COND_INITIALIZER;
-static size_t signal_count = 0;
+static pthread_barrier_t barrier;
 
 static void *get_freq(void *arg)
 {
     size_t thread_idx = (size_t)arg;
-    int current_iteration = -1;
+    int local_iteration = -1;
 
     while (true)
     {
-        pthread_mutex_lock(&mutex);
-        while (current_iteration == iteration_count && ready != -1)
-        {
-            pthread_cond_wait(&cond, &mutex);
-        }
+        // the newly created threads wait here until the main thread enters it's first barrier
+        pthread_barrier_wait(&barrier);
 
-        if (ready == -1)
+        pthread_mutex_lock(&mutex);
+        if (terminate)
         {
             pthread_mutex_unlock(&mutex);
             return (void *)1;
         }
-
-        current_iteration = iteration_count;
+        local_iteration = current_iteration;
         pthread_mutex_unlock(&mutex);
 
         size_t per_thread_len = text_size / THREAD_NO;
@@ -462,10 +458,8 @@ static void *get_freq(void *arg)
             hash_table_insert(thread_tables[thread_idx], &pair, &count);
         }
 
-        pthread_mutex_lock(&signal_mutex);
-        signal_count++;
-        pthread_cond_broadcast(&signal_cond);
-        pthread_mutex_unlock(&signal_mutex);
+        // signal to the main thread that the thread is completed
+        pthread_barrier_wait(&barrier);
     }
 
     return (void *)1;
@@ -564,6 +558,13 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         }
     }
 
+    if (pthread_barrier_init(&barrier, NULL, THREAD_NO + 1))
+    {
+        for (size_t i = 0; i < THREAD_NO; i++)
+            hash_table_destroy(thread_tables[i]);
+        goto error_handling;
+    }
+
     if (pthread_attr_init(&attr))
     {
         dyn_arr_free(pair_arr);
@@ -603,33 +604,18 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
     for (size_t iteration = 0;; iteration++)
     {
-        pthread_mutex_lock(&signal_mutex);
-        signal_count = 0;
-        pthread_mutex_unlock(&signal_mutex);
-
         pthread_mutex_lock(&mutex);
-        iteration_count++;
-        ready = 1;
-        pthread_cond_broadcast(&cond);
+        current_iteration = iteration;
         pthread_mutex_unlock(&mutex);
 
-        pthread_mutex_lock(&signal_mutex);
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += 10; // 10 second timeout
+        // signal the threads to start this iteration
+        // this is a signal since all the other threads would be waiting on their first barrier for the main thread
+        // to cross the barrier and let them run
+        pthread_barrier_wait(&barrier);
 
-        while (signal_count < THREAD_NO)
-        {
-            int ret = pthread_cond_timedwait(&signal_cond, &signal_mutex, &ts);
-            if (ret == ETIMEDOUT)
-            {
-                pthread_mutex_unlock(&signal_mutex);
-                for (size_t i = 0; i < THREAD_NO; i++)
-                    hash_table_destroy(thread_tables[i]);
-                goto error_handling;
-            }
-        }
-        pthread_mutex_unlock(&signal_mutex);
+        // the main thread will wait on this barrier until all the others have completed, signalling main to
+        // continue it's execution
+        pthread_barrier_wait(&barrier);
 
         table = hash_table_merge(thread_tables, THREAD_NO, val_add,
                                  sizeof(pair_t), sizeof(size_t), 2048);
@@ -744,9 +730,10 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
     }
 
     pthread_mutex_lock(&mutex);
-    ready = -1;
-    pthread_cond_broadcast(&cond);
+    terminate = 1;
     pthread_mutex_unlock(&mutex);
+
+    pthread_barrier_wait(&barrier);
 
     for (size_t i = 0; i < THREAD_NO; i++)
     {
@@ -763,9 +750,10 @@ error_handling:
     if (threads_created)
     {
         pthread_mutex_lock(&mutex);
-        ready = -1;
-        pthread_cond_broadcast(&cond);
+        terminate = 1;
         pthread_mutex_unlock(&mutex);
+
+        pthread_barrier_wait(&barrier);
 
         for (size_t i = 0; i < THREAD_NO; i++)
         {
