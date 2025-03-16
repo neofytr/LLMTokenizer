@@ -1,4 +1,5 @@
 #include "../inc/bpe.h"
+#include <pthread.h>
 
 bool is_less(const void *a, const void *b)
 {
@@ -395,6 +396,47 @@ char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr)
 #define PROFILE_BEGIN(beg) (beg) = clock()
 #define PROFILE_END(beg, label) fprintf(stdout, "%s: %lf seconds\n", (label), (double)(clock() - (beg)) / CLOCKS_PER_SEC)
 
+typedef struct
+{
+    uint32_t *text_arr;
+    hash_table_t *text_table;
+    size_t len;
+} text_t;
+
+static void *get_freq(void *arg)
+{
+    if (!arg)
+    {
+        return NULL;
+    }
+
+    text_t *text_struct = (text_t *)arg;
+    uint32_t *text_arr = text_struct->text_arr;
+    hash_table_t *text_table = text_struct->text_table;
+    size_t text_size = text_struct->len;
+
+    if (!text_arr || !text_table)
+    {
+        return NULL;
+    }
+
+    for (int i = 0; i < text_size - 1; i++)
+    {
+        pair_t pair = {text_arr[i], text_arr[i + 1]};
+        size_t count = 0;
+
+        hash_table_search(text_table, &pair, &count);
+        count++;
+        if (!hash_table_insert(text_table, &pair, &count))
+        {
+            perror("hash_table_insert");
+            hash_table_destroy(text_table);
+        }
+    }
+
+    return (void *)1;
+}
+
 dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 {
 
@@ -476,6 +518,23 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
+#define THREAD_NO (16)
+
+        pthread_t worker_threads[THREAD_NO];
+        pthread_attr_t attr;
+
+        pthread_attr_init(&attr);
+        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+
+        size_t per_thread_text_len = text_size / THREAD_NO;
+        size_t last_thread_excess = text_size & (THREAD_NO - 1);
+
+        for (size_t index = 0; index < THREAD_NO; index++)
+        {
+
+            pthread_create(&worker_threads[index], &attr, get_freq, );
+        }
+
         PROFILE_BEGIN(begin);
         // prepare frequency of each pair
         for (int i = 0; i < text_size - 1; i++)
@@ -493,6 +552,8 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             }
         }
         PROFILE_END(begin, "Frequency preparation time");
+
+#undef THREAD_NO
 
         // create a dynamic array to store pair-frequency data retrived from text
         dyn_arr_t *node_arr = dyn_arr_create(0, sizeof(pair_freq_t));
