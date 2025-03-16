@@ -2,17 +2,54 @@
 
 #include <string.h>
 
-static inline unsigned long djb2_hash(const void *key, size_t key_size)
-{
-    unsigned long hash = 5381;
-    uint8_t *data = (uint8_t *)key;
+#define SEED 0x9747b28c
+#define BUCKET_DOUBLING_CUTOFF (0.3)
 
-    for (size_t counter = 0; counter < key_size; counter++)
+static inline uint32_t hash_murmur3_32(const void *key, size_t key_size)
+{
+    const uint8_t *data = (const uint8_t *)key;
+    const int nblocks = key_size / 4;
+    uint32_t h = SEED;
+    const uint32_t c1 = 0xcc9e2d51;
+    const uint32_t c2 = 0x1b873593;
+
+    const uint32_t *blocks = (const uint32_t *)(data);
+    for (int i = 0; i < nblocks; i++)
     {
-        hash = ((hash << 5) + hash) + data[counter];
+        uint32_t k = blocks[i];
+        k *= c1;
+        k = (k << 15) | (k >> 17);
+        k *= c2;
+
+        h ^= k;
+        h = (h << 13) | (h >> 19);
+        h = h * 5 + 0xe6546b64;
     }
 
-    return hash;
+    const uint8_t *tail = (const uint8_t *)(data + nblocks * 4);
+    uint32_t k1 = 0;
+    switch (key_size & 3)
+    {
+    case 3:
+        k1 ^= tail[2] << 16;
+    case 2:
+        k1 ^= tail[1] << 8;
+    case 1:
+        k1 ^= tail[0];
+        k1 *= c1;
+        k1 = (k1 << 15) | (k1 >> 17);
+        k1 *= c2;
+        h ^= k1;
+    }
+
+    h ^= key_size;
+    h ^= h >> 16;
+    h *= 0x85ebca6b;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35;
+    h ^= h >> 16;
+
+    return h;
 }
 
 hash_table_t *hash_table_create(size_t num_of_buckets, size_t key_size, size_t value_size)
@@ -32,6 +69,7 @@ hash_table_t *hash_table_create(size_t num_of_buckets, size_t key_size, size_t v
     table->value_size = value_size;
     table->key_size = key_size;
     table->free_nodes = NULL;
+    table->num_of_nodes = 0;
 
     return table;
 }
@@ -154,12 +192,68 @@ hash_table_t *hash_table_merge(hash_table_t **hash_table_arr, size_t len, hash_v
     return merged_table;
 }
 
+bool hash_table_resize(hash_table_t *table, size_t new_bucket_count)
+{
+    if (!table || new_bucket_count <= 0)
+        return false;
+
+    node_t **new_buckets = calloc(new_bucket_count, sizeof(node_t *));
+    if (!new_buckets)
+        return false;
+
+    size_t old_bucket_count = table->num_of_buckets;
+    node_t **old_buckets = table->buckets;
+
+    // rehash all entries
+    for (size_t i = 0; i < old_bucket_count; i++)
+    {
+        node_t *current = old_buckets[i];
+        while (current)
+        {
+            node_t *next = current->next;
+
+            if (!current->is_free)
+            {
+                // calculate new hash based on new bucket count
+                unsigned long new_hash = hash_murmur3_32(current->key, table->key_size) % new_bucket_count;
+
+                // insert at beginning of new bucket chain
+                current->next = new_buckets[new_hash];
+                new_buckets[new_hash] = current;
+            }
+            else
+            {
+                // handle free nodes
+                current->next = table->free_nodes;
+                table->free_nodes = current;
+            }
+
+            current = next;
+        }
+    }
+
+    // update table structure
+    free(old_buckets);
+    table->buckets = new_buckets;
+    table->num_of_buckets = new_bucket_count;
+
+    return true;
+}
+
 bool hash_table_insert(hash_table_t *table, const void *key, const void *value)
 {
     if (!table || !key || !value)
         return false;
 
-    unsigned long hash = djb2_hash(key, table->key_size) % table->num_of_buckets;
+    if (table->num_of_nodes >= BUCKET_DOUBLING_CUTOFF * table->num_of_buckets)
+    {
+        if (!hash_table_resize(table, table->num_of_buckets * 2))
+        {
+            // rehashing failed will lead to a performance degrade
+        }
+    }
+
+    unsigned long hash = hash_murmur3_32(key, table->key_size) % table->num_of_buckets;
 
     node_t *current = table->buckets[hash];
     while (current)
@@ -207,6 +301,8 @@ bool hash_table_insert(hash_table_t *table, const void *key, const void *value)
     new_node->is_free = false;
     table->buckets[hash] = new_node;
 
+    table->num_of_nodes++;
+
     return true;
 }
 
@@ -237,6 +333,7 @@ bool hash_table_clear(hash_table_t *table)
         table->buckets[index] = NULL;
     }
 
+    table->num_of_nodes = 0;
     return true;
 }
 
@@ -247,7 +344,7 @@ bool hash_table_delete(hash_table_t *table, const void *key)
     if (!table || !key)
         return false;
 
-    unsigned long hash = djb2_hash(key, table->key_size) % table->num_of_buckets;
+    unsigned long hash = hash_murmur3_32(key, table->key_size) % table->num_of_buckets;
 
     node_t *current = table->buckets[hash];
     node_t *prev = NULL;
@@ -269,6 +366,8 @@ bool hash_table_delete(hash_table_t *table, const void *key)
             current->next = table->free_nodes;
             table->free_nodes = current;
 
+            table->num_of_nodes--;
+
             return true;
         }
 
@@ -284,7 +383,7 @@ bool hash_table_search(hash_table_t *table, const void *key, void *value)
     if (!table || !key || !value)
         return false;
 
-    unsigned long hash = djb2_hash(key, table->key_size) % table->num_of_buckets;
+    unsigned long hash = hash_murmur3_32(key, table->key_size) % table->num_of_buckets;
 
     node_t *current = table->buckets[hash];
     while (current)

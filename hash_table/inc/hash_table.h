@@ -22,6 +22,8 @@ typedef struct
     size_t value_size;
     node_t **buckets;   // each bucket is a linked list of nodes
     node_t *free_nodes; // list of free nodes that can be reused
+    size_t num_of_nodes;
+
 } hash_table_t;
 
 hash_table_t *hash_table_create(size_t num_of_buckets, size_t key_size, size_t value_size); // number of buckets you want in the hashtable

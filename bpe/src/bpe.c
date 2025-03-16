@@ -611,9 +611,12 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         }
     }
 
+#define PER_THREAD_TABLE_BUCKET_NUM (1U << 20)
+#define MERGED_TABLE_BUCKET_NUM (1U << 24)
+
     for (size_t i = 0; i < THREAD_NO; i++)
     {
-        thread_tables[i] = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
+        thread_tables[i] = hash_table_create(PER_THREAD_TABLE_BUCKET_NUM, sizeof(pair_t), sizeof(size_t));
         if (!thread_tables[i])
         {
             for (size_t j = 0; j < i; j++)
@@ -695,7 +698,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         PROFILE_END_TS(begin, "Frequency collection time");
 
         table = hash_table_merge(thread_tables, THREAD_NO, val_add,
-                                 sizeof(pair_t), sizeof(size_t), 2048);
+                                 sizeof(pair_t), sizeof(size_t), MERGED_TABLE_BUCKET_NUM);
 
         if (!table)
         {

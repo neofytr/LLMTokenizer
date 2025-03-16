@@ -5,6 +5,7 @@
         "hash_table.h": "c",
         "pair_hash_table.h": "c",
         "stdbool.h": "c",
-        "stdint.h": "c"
+        "stdint.h": "c",
+        "string.h": "c"
     }
 }
