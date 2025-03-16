@@ -8,6 +8,70 @@ bool is_less(const void *a, const void *b)
     return freq_a->freq < freq_b->freq;
 }
 
+char *resolve_pair(uint32_t pair_index, dyn_arr_t *pair_arr)
+{
+    pair_t pair;
+    if (!dyn_arr_get(pair_arr, pair_index, (void *)&pair))
+    {
+        return NULL;
+    }
+
+    if (pair.a == pair_index)
+    {
+        char *single = (char *)malloc(2);
+        snprintf(single, 2, "%c", (char)pair.a);
+        return single;
+    }
+
+    char *a_text = resolve_pair(pair.a, pair_arr);
+    char *b_text = resolve_pair(pair.b, pair_arr);
+
+    if (!a_text || !b_text)
+    {
+        return NULL;
+    }
+
+    char *final = (char *)malloc(strlen(a_text) + strlen(b_text) + 1); // +1 for null terminator
+    if (!final)
+    {
+        return NULL;
+    }
+
+    snprintf(final, strlen(a_text) + strlen(b_text) + 1, "%s%s", a_text, b_text);
+    free(a_text);
+    free(b_text);
+
+    return final;
+}
+
+void render_pairs(dyn_arr_t *pair_arr)
+{
+    for (size_t index = 256; index <= pair_arr->last_index; index++)
+    {
+        pair_t pair;
+        if (!dyn_arr_get(pair_arr, index, (void *)&pair))
+        {
+            return;
+        }
+
+        if (pair.a == index)
+        {
+            fprintf(stdout, "%zu => %c\n", index, (char)pair.a);
+        }
+        else
+        {
+            char *str = resolve_pair(index, pair_arr);
+            if (!str)
+            {
+                return;
+            }
+
+            fprintf(stdout, "%zu => %s\n", index, str);
+            free(str);
+        }
+    }
+}
+
 char *get_file(const char *path)
 {
     FILE *file = fopen(path, "r");
@@ -440,6 +504,7 @@ int main(int argc, char **argv)
 
     print_text(text, text_len);
     print_graph(pair_arr, "graph.png", false);
+    render_pairs(pair_arr);
 
     free(text);
     dyn_arr_free(pair_arr);
