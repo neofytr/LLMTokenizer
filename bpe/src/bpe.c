@@ -393,8 +393,16 @@ char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr)
 #undef INIT_LEN
 }
 
-#define PROFILE_BEGIN(beg) (beg) = clock()
-#define PROFILE_END(beg, label) fprintf(stdout, "%s: %lf seconds\n", (label), (double)(clock() - (beg)) / CLOCKS_PER_SEC)
+#define PROFILE_BEGIN_TS(beg) clock_gettime(CLOCK_MONOTONIC, &(beg))
+#define PROFILE_END_TS(beg, label)                              \
+    do                                                          \
+    {                                                           \
+        struct timespec end;                                    \
+        clock_gettime(CLOCK_MONOTONIC, &end);                   \
+        double elapsed = (end.tv_sec - (beg).tv_sec) +          \
+                         (end.tv_nsec - (beg).tv_nsec) / 1e9;   \
+        fprintf(stdout, "%s: %lf seconds\n", (label), elapsed); \
+    } while (0)
 
 typedef struct
 {
