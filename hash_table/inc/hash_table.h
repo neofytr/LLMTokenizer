@@ -12,7 +12,7 @@ typedef struct node
     struct node *next;
 } node_t;
 
-typedef void *(*hash_value_add(const void *val_one, const void *val_two));
+typedef bool(*hash_value_add(const void *val_one, const void *val_two, const void *result));
 
 typedef struct
 {
