@@ -398,7 +398,6 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 #include <time.h>
 
     clock_t start, end, total_start, total_end;
-    double cpu_time_used;
 
     if (!path)
     {
@@ -493,8 +492,6 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             }
         }
         end = clock();
-
-        cpu_time_used = ((double)(end - start)) / CLOCKS_PER_SEC;
 
         // create a dynamic array to store pair-frequency data retrived from text
         dyn_arr_t *node_arr = dyn_arr_create(0, sizeof(pair_freq_t));
@@ -602,7 +599,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         printf("pair array length: %zu\n", pair_arr->last_index + 1);
         printf("encoded text size: %d\n", text_size);
         printf("total time taken: %lf seconds\n", (double)(total_end - total_start) / CLOCKS_PER_SEC);
-        printf("Time for frequency preparation: %lf seconds\n", cpu_time_used);
+        printf("Time for frequency preparation: %lf seconds\n", (double)(end - start) / CLOCKS_PER_SEC);
     }
 
     *encoding = text;
