@@ -429,7 +429,10 @@ static void *get_freq(void *arg)
     while (true)
     {
         pthread_mutex_lock(&mutex);
-        pthread_cond_wait(&cond, &mutex);
+        while (!ready)
+        {
+            pthread_cond_wait(&cond, &mutex);
+        }
 
         if (ready == -1)
         {
@@ -459,6 +462,10 @@ static void *get_freq(void *arg)
         signal_count++;
         pthread_cond_signal(&signal_cond);
         pthread_mutex_unlock(&signal_mutex);
+
+        pthread_mutex_lock(&mutex);
+        ready = 0;
+        pthread_mutex_unlock(&mutex);
     }
 
     return (void *)1;
@@ -588,6 +595,8 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         struct timespec begin;
         PROFILE_BEGIN_TS(begin);
 
+        signal_count = 0;
+
         for (size_t i = 0; i < THREAD_NO; i++)
         {
             thread_tables[i] = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
@@ -606,11 +615,21 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         pthread_mutex_unlock(&mutex);
 
         pthread_mutex_lock(&signal_mutex);
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 10; // 10 second timeout
+
         while (signal_count < THREAD_NO)
         {
-            pthread_cond_wait(&signal_cond, &signal_mutex);
+            int ret = pthread_cond_timedwait(&signal_cond, &signal_mutex, &ts);
+            if (ret == ETIMEDOUT)
+            {
+                pthread_mutex_unlock(&signal_mutex);
+                for (size_t i = 0; i < THREAD_NO; i++)
+                    hash_table_destroy(thread_tables[i]);
+                goto error_handling;
+            }
         }
-        signal_count = 0;
         pthread_mutex_unlock(&signal_mutex);
 
         table = hash_table_merge(thread_tables, THREAD_NO, val_add,
@@ -712,8 +731,6 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
         next_symbol++;
 
-        print_text(text, text_size);
-
         dyn_arr_free(node_arr);
         hash_table_destroy(table);
     }
@@ -724,7 +741,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
     temp = NULL;
 
     uint32_t *reallocated_encoding = realloc(*encoding, *len * sizeof(uint32_t));
-    if (!reallocated_encoding)
+    if (reallocated_encoding)
     {
         *encoding = reallocated_encoding;
     }
