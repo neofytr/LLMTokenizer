@@ -355,7 +355,7 @@ char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr)
 
     size_t str_pos = 0;
     size_t str_capacity = INIT_LEN;
-    str[0] = '\0'; // initialize as empty string
+    str[0] = 0; // initialize as empty string
 
     for (size_t index = 0; index < len; index++)
     {
@@ -406,32 +406,63 @@ char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr)
         fprintf(stdout, "%s: %lf seconds\n", (label), elapsed); \
     } while (0)
 
-#define THREAD_NO 16
+#define THREAD_NO 24
 
 static uint32_t *text;
 static uint32_t *temp;
 static size_t text_size;
 static hash_table_t *thread_tables[THREAD_NO];
-static pthread_t worker_threads[THREAD_NO];
+static pthread_t worker_threads[THREAD_NO] = {0};
+
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+int ready = 0;
+
+static pthread_mutex_t signal_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t signal_cond = PTHREAD_COND_INITIALIZER;
+static size_t signal_count = 0;
 
 static void *get_freq(void *arg)
 {
     size_t thread_idx = (size_t)arg;
-    size_t per_thread_len = text_size / THREAD_NO;
-    size_t start_index = thread_idx * per_thread_len;
-    size_t chunk_len = (thread_idx == THREAD_NO - 1) ? (per_thread_len + text_size % THREAD_NO) : per_thread_len;
 
-    for (size_t i = start_index; i < start_index + chunk_len; i++)
+    while (true)
     {
-        if (i + 1 >= text_size)
-            break;
+        pthread_mutex_lock(&mutex);
+        pthread_cond_wait(&cond, &mutex);
 
-        pair_t pair = {text[i], text[i + 1]};
-        size_t count = 0;
+        if (ready == -1)
+        {
+            pthread_mutex_unlock(&mutex);
+            return (void *)1;
+        }
+        pthread_mutex_unlock(&mutex);
 
-        hash_table_search(thread_tables[thread_idx], &pair, &count);
-        count++;
-        hash_table_insert(thread_tables[thread_idx], &pair, &count);
+        size_t per_thread_len = text_size / THREAD_NO;
+        size_t start_index = thread_idx * per_thread_len;
+        size_t chunk_len = (thread_idx == THREAD_NO - 1) ? (per_thread_len + text_size % THREAD_NO) : per_thread_len;
+
+        for (size_t i = start_index; i < start_index + chunk_len; i++)
+        {
+            if (i + 1 >= text_size)
+                break;
+
+            pair_t pair = {text[i], text[i + 1]};
+            size_t count = 0;
+
+            hash_table_search(thread_tables[thread_idx], &pair, &count);
+            count++;
+            hash_table_insert(thread_tables[thread_idx], &pair, &count);
+        }
+
+        pthread_mutex_lock(&signal_mutex);
+        signal_count++;
+        pthread_cond_signal(&signal_cond);
+        pthread_mutex_unlock(&signal_mutex);
+
+        pthread_mutex_lock(&mutex);
+        ready = 0;
+        pthread_mutex_unlock(&mutex);
     }
 
     return (void *)1;
@@ -451,6 +482,11 @@ bool val_add(const void *val_one, const void *val_two, const void *result)
 
 dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 {
+    pthread_attr_t attr;
+    dyn_arr_t *pair_arr = NULL;
+    hash_table_t *table = NULL;
+    bool threads_created = false;
+
     if (!path || !encoding || !len)
         return NULL;
 
@@ -469,13 +505,17 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
     }
 
     text = (uint32_t *)malloc(text_size * sizeof(uint32_t));
-    temp = (uint32_t *)malloc(text_size * sizeof(uint32_t));
+    if (!text)
+    {
+        free(text_buffer);
+        return NULL;
+    }
 
-    if (!text || !temp)
+    temp = (uint32_t *)malloc(text_size * sizeof(uint32_t));
+    if (!temp)
     {
         free(text_buffer);
         free(text);
-        free(temp);
         return NULL;
     }
 
@@ -488,7 +528,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
     free(text_buffer);
 
     uint32_t next_symbol = 256;
-    dyn_arr_t *pair_arr = dyn_arr_create(512, sizeof(pair_t));
+    pair_arr = dyn_arr_create(512, sizeof(pair_t));
 
     if (!pair_arr)
     {
@@ -509,9 +549,42 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         }
     }
 
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE);
+    if (pthread_attr_init(&attr))
+    {
+        dyn_arr_free(pair_arr);
+        free(text);
+        free(temp);
+        return NULL;
+    }
+
+    if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE))
+    {
+        pthread_attr_destroy(&attr);
+        dyn_arr_free(pair_arr);
+        free(text);
+        free(temp);
+        return NULL;
+    }
+
+    for (size_t i = 0; i < THREAD_NO; i++)
+    {
+        if (pthread_create(&worker_threads[i], &attr, get_freq, (void *)i))
+        {
+            pthread_attr_destroy(&attr);
+            for (size_t j = 0; j < i; j++)
+            {
+                pthread_cancel(worker_threads[j]);
+                pthread_join(worker_threads[j], NULL);
+            }
+            dyn_arr_free(pair_arr);
+            free(text);
+            free(temp);
+            return NULL;
+        }
+    }
+
+    threads_created = true;
+    pthread_attr_destroy(&attr);
 
     for (size_t iteration = 0;; iteration++)
     {
@@ -529,24 +602,23 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
                 goto error_handling;
             }
-
-            if (pthread_create(&worker_threads[i], &attr, get_freq, (void *)i) != 0)
-            {
-                for (size_t j = 0; j <= i; j++)
-                    hash_table_destroy(thread_tables[j]);
-
-                goto error_handling;
-            }
         }
 
-        for (size_t i = 0; i < THREAD_NO; i++)
+        pthread_mutex_lock(&mutex);
+        ready = 1;
+        pthread_cond_broadcast(&cond);
+        pthread_mutex_unlock(&mutex);
+
+        pthread_mutex_lock(&signal_mutex);
+        while (signal_count < THREAD_NO)
         {
-            void *status;
-            pthread_join(worker_threads[i], &status);
+            pthread_cond_wait(&signal_cond, &signal_mutex);
         }
+        signal_count = 0;
+        pthread_mutex_unlock(&signal_mutex);
 
-        hash_table_t *table = hash_table_merge(thread_tables, THREAD_NO, val_add,
-                                               sizeof(pair_t), sizeof(size_t), 2048);
+        table = hash_table_merge(thread_tables, THREAD_NO, val_add,
+                                 sizeof(pair_t), sizeof(size_t), 2048);
 
         if (!table)
         {
@@ -648,23 +720,54 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         hash_table_destroy(table);
     }
 
-    pthread_attr_destroy(&attr);
     *encoding = text;
     *len = text_size;
     free(temp);
+    temp = NULL;
 
-    uint32_t *new_encoding = realloc(*encoding, *len * sizeof(uint32_t));
-    if (new_encoding)
-        *encoding = new_encoding;
+    uint32_t *reallocated_encoding = realloc(*encoding, *len * sizeof(uint32_t));
+    if (!reallocated_encoding)
+    {
+        *encoding = reallocated_encoding;
+    }
+
+    pthread_mutex_lock(&mutex);
+    ready = -1;
+    pthread_cond_broadcast(&cond);
+    pthread_mutex_unlock(&mutex);
+
+    for (size_t i = 0; i < THREAD_NO; i++)
+    {
+        void *status;
+        pthread_join(worker_threads[i], &status);
+    }
 
     return pair_arr;
 
 error_handling:
-    pthread_attr_destroy(&attr);
+    if (threads_created)
+    {
+        pthread_mutex_lock(&mutex);
+        ready = -1;
+        pthread_cond_broadcast(&cond);
+        pthread_mutex_unlock(&mutex);
+
+        for (size_t i = 0; i < THREAD_NO; i++)
+        {
+            void *status;
+            if (worker_threads[i] != 0)
+            {
+                pthread_join(worker_threads[i], &status);
+            }
+        }
+    }
+
     if (pair_arr)
         dyn_arr_free(pair_arr);
-    free(text);
-    free(temp);
+    if (text)
+        free(text);
+    if (temp)
+        free(temp);
     *encoding = NULL;
     *len = 0;
     return NULL;
