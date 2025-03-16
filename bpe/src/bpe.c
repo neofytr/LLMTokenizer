@@ -459,10 +459,6 @@ static void *get_freq(void *arg)
         signal_count++;
         pthread_cond_signal(&signal_cond);
         pthread_mutex_unlock(&signal_mutex);
-
-        pthread_mutex_lock(&mutex);
-        ready = 0;
-        pthread_mutex_unlock(&mutex);
     }
 
     return (void *)1;
@@ -715,6 +711,8 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         text_size = new_text_size;
 
         next_symbol++;
+
+        print_text(text, text_size);
 
         dyn_arr_free(node_arr);
         hash_table_destroy(table);
