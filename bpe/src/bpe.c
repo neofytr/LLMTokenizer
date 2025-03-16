@@ -429,10 +429,7 @@ static void *get_freq(void *arg)
     while (true)
     {
         pthread_mutex_lock(&mutex);
-        while (!ready)
-        {
-            pthread_cond_wait(&cond, &mutex);
-        }
+        pthread_cond_wait(&cond, &mutex);
 
         if (ready == -1)
         {
@@ -462,10 +459,6 @@ static void *get_freq(void *arg)
         signal_count++;
         pthread_cond_signal(&signal_cond);
         pthread_mutex_unlock(&signal_mutex);
-
-        pthread_mutex_lock(&mutex);
-        ready = 0;
-        pthread_mutex_unlock(&mutex);
     }
 
     return (void *)1;

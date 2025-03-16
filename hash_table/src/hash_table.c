@@ -152,6 +152,20 @@ bool hash_table_insert(hash_table_t *table, const void *key, const void *value)
         current = current->next;
     }
 
+    // before creating a new entry, check to see if we can find an empty entry in the same bucket
+    while (current)
+    {
+        if (current->is_free)
+        {
+            memcpy(current->value, value, table->value_size);
+            memcpy(current->key, key, table->key_size);
+            current->is_free = false;
+            return true;
+        }
+
+        current = current->next;
+    }
+
     node_t *new_node = malloc(sizeof(node_t));
     if (!new_node)
         return false;
@@ -175,11 +189,35 @@ bool hash_table_insert(hash_table_t *table, const void *key, const void *value)
     memcpy(new_node->value, value, table->value_size);
 
     new_node->next = table->buckets[hash];
+    new_node->is_free = false;
     table->buckets[hash] = new_node;
 
     return true;
 }
 
+// marks all the entries in the table as free
+bool hash_table_clear(hash_table_t *table)
+{
+    if (!table)
+    {
+        return false;
+    }
+
+    for (size_t index = 0; index < table->num_of_buckets; index++)
+    {
+        node_t *curr = (node_t *)table->buckets[index];
+        while (curr)
+        {
+            curr->is_free = true;
+            curr = curr->next;
+        }
+    }
+
+    return true;
+}
+
+// doesn't actually delete the entry, just marks it as free
+// this is better since we can use the space allocated for some other entry
 bool hash_table_delete(hash_table_t *table, const void *key)
 {
     if (!table || !key)
@@ -192,7 +230,7 @@ bool hash_table_delete(hash_table_t *table, const void *key)
 
     while (current)
     {
-        if (memcmp(current->key, key, table->key_size) == 0)
+        if (!memcmp(current->key, key, table->key_size))
         {
             if (prev)
             {
@@ -203,9 +241,7 @@ bool hash_table_delete(hash_table_t *table, const void *key)
                 table->buckets[hash] = current->next;
             }
 
-            free(current->key);
-            free(current->value);
-            free(current);
+            current->is_free = true;
             return true;
         }
 
