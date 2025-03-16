@@ -8,44 +8,96 @@ bool is_less(const void *a, const void *b)
     return freq_a->freq < freq_b->freq;
 }
 
-char *resolve_pair(uint32_t pair_index, dyn_arr_t *pair_arr)
+hash_table_t *create_mem_table()
 {
+    hash_table_t *table = hash_table_create(256, sizeof(uint32_t), sizeof(char *));
+    // the hash table stores the pointer to the character array
+    if (!table)
+    {
+        return NULL;
+    }
+    return table;
+}
+
+char *resolve_pair(uint32_t pair_index, dyn_arr_t *pair_arr, hash_table_t *memoization_table)
+{
+    if (!pair_arr || !memoization_table)
+    {
+        return NULL;
+    }
+
+    char *cached_result;
+    // get the pointer to the character array from the table
+    if (hash_table_search(memoization_table, (const void *)&pair_index, (void *)&cached_result))
+    {
+        // duplicate the character array so that we don't destroy the table's copy of it (the table contains the pointer to its copy)
+        char *result_copy = strdup(cached_result);
+        return result_copy;
+    }
+
     pair_t pair;
     if (!dyn_arr_get(pair_arr, pair_index, (void *)&pair))
     {
         return NULL;
     }
 
+    char *result;
+
     if (pair.a == pair_index)
     {
-        char *single = (char *)malloc(2);
-        snprintf(single, 2, "%c", (char)pair.a);
-        return single;
+        result = (char *)malloc(2);
+        if (!result)
+            return NULL;
+
+        snprintf(result, 2, "%c", (char)pair.a);
     }
-
-    char *a_text = resolve_pair(pair.a, pair_arr);
-    char *b_text = resolve_pair(pair.b, pair_arr);
-
-    if (!a_text || !b_text)
+    else
     {
-        return NULL;
+        char *a_text = resolve_pair(pair.a, pair_arr, memoization_table);
+        if (!a_text)
+            return NULL;
+
+        char *b_text = resolve_pair(pair.b, pair_arr, memoization_table);
+        if (!b_text)
+        {
+            free(a_text);
+            return NULL;
+        }
+
+        result = (char *)malloc(strlen(a_text) + strlen(b_text) + 1);
+        if (!result)
+        {
+            free(a_text);
+            free(b_text);
+            return NULL;
+        }
+
+        strcpy(result, a_text);
+        strcat(result, b_text);
+
+        free(a_text);
+        free(b_text);
     }
 
-    char *final = (char *)malloc(strlen(a_text) + strlen(b_text) + 1); // +1 for null terminator
-    if (!final)
+    char *result_to_store = strdup(result);
+    // make a copy of the result and store it's pointer into the table
+    // this is done so that the table's copy is preserved when we free this result in a recursive step
+    if (result_to_store)
     {
-        return NULL;
+        hash_table_insert(memoization_table, (const void *)&pair_index, (const void *)&result_to_store);
     }
 
-    snprintf(final, strlen(a_text) + strlen(b_text) + 1, "%s%s", a_text, b_text);
-    free(a_text);
-    free(b_text);
-
-    return final;
+    return result;
 }
 
 void render_pairs(dyn_arr_t *pair_arr)
 {
+    hash_table_t *mem_table = create_mem_table();
+    if (!mem_table)
+    {
+        return;
+    }
+
     for (size_t index = 256; index <= pair_arr->last_index; index++)
     {
         pair_t pair;
@@ -60,7 +112,7 @@ void render_pairs(dyn_arr_t *pair_arr)
         }
         else
         {
-            char *str = resolve_pair(index, pair_arr);
+            char *str = resolve_pair(index, pair_arr, mem_table);
             if (!str)
             {
                 return;
@@ -70,6 +122,8 @@ void render_pairs(dyn_arr_t *pair_arr)
             free(str);
         }
     }
+
+    hash_table_destroy(mem_table);
 }
 
 char *get_file(const char *path)
@@ -286,6 +340,12 @@ dyn_arr_t *read_pairs(const char *path)
 char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr)
 {
 #define INIT_LEN (4096)
+    hash_table_t *mem_table = create_mem_table();
+    if (!mem_table)
+    {
+        return NULL;
+    }
+
     char *str = (char *)malloc(sizeof(char) * INIT_LEN);
     if (!str)
     {
@@ -298,7 +358,7 @@ char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr)
 
     for (size_t index = 0; index < len; index++)
     {
-        char *res_pair = resolve_pair(encoding[index], pair_arr);
+        char *res_pair = resolve_pair(encoding[index], pair_arr, mem_table);
         if (!res_pair)
         {
             free(str);
@@ -327,6 +387,7 @@ char *decompress(uint32_t *encoding, size_t len, dyn_arr_t *pair_arr)
         free(res_pair);
     }
 
+    hash_table_destroy(mem_table);
     return str;
 #undef INIT_LEN
 }
