@@ -545,6 +545,18 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         }
     }
 
+    for (size_t i = 0; i < THREAD_NO; i++)
+    {
+        thread_tables[i] = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
+        if (!thread_tables[i])
+        {
+            for (size_t j = 0; j < i; j++)
+                hash_table_destroy(thread_tables[j]);
+
+            goto error_handling;
+        }
+    }
+
     if (pthread_attr_init(&attr))
     {
         dyn_arr_free(pair_arr);
@@ -590,18 +602,6 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
         signal_count = 0;
 
-        for (size_t i = 0; i < THREAD_NO; i++)
-        {
-            thread_tables[i] = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
-            if (!thread_tables[i])
-            {
-                for (size_t j = 0; j < i; j++)
-                    hash_table_destroy(thread_tables[j]);
-
-                goto error_handling;
-            }
-        }
-
         pthread_mutex_lock(&mutex);
         ready = 1;
         pthread_cond_broadcast(&cond);
@@ -636,8 +636,9 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
+        // clear the hash tables for future use
         for (size_t i = 0; i < THREAD_NO; i++)
-            hash_table_destroy(thread_tables[i]);
+            hash_table_clear(thread_tables[i]);
 
         PROFILE_END_TS(begin, "Frequency calculation time:");
 
