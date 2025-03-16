@@ -18,13 +18,6 @@ int main(int argc, char **argv)
     }
 
     print_text(text, text_len);
-    print_graph(pair_arr, "graph.png", false);
-    render_pairs(pair_arr);
-    printf("\n\n");
-    char *str = decompress(text, text_len, pair_arr);
-
-    printf("%s\n", str);
-    free(str);
 
     free(text);
     dyn_arr_free(pair_arr);

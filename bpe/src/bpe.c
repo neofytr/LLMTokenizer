@@ -236,7 +236,7 @@ void print_graph(dyn_arr_t *pair_arr, const char *png_name, bool add_ascii)
         fprintf(stderr, "Failed to generate PNG\n");
     }
 
-    system("rm temp_graph.dot");
+    int rv = system("rm temp_graph.dot");
 }
 
 bool dump_pairs(const char *path, dyn_arr_t *pair_arr)
@@ -456,7 +456,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         }
     }
 
-    for (;;)
+    for (size_t iteration = 0;; iteration++)
     {
         hash_table_t *table = hash_table_create(1024, sizeof(pair_t), sizeof(size_t));
         if (!table)
@@ -465,6 +465,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
+        // prepare frequency of each pair
         for (int i = 0; i < text_size - 1; i++)
         {
             pair_t pair = {text[i], text[i + 1]};
@@ -480,6 +481,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             }
         }
 
+        // create a dynamic array to store pair-frequency data retrived from text
         dyn_arr_t *node_arr = dyn_arr_create(0, sizeof(pair_freq_t));
         if (!node_arr)
         {
@@ -488,6 +490,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
+        // feed the pair-frequency data into a dynamic array
         size_t index = 0;
         for (size_t i = 0; i < table->num_of_buckets; i++)
         {
@@ -514,6 +517,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             }
         }
 
+        // no pairs found; text with 0 or 1 element
         if (!index)
         {
             dyn_arr_free(node_arr);
@@ -521,6 +525,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             break;
         }
 
+        // find the pair-freq node with the maximum frequency
         pair_freq_t max;
         if (!dyn_arr_max(node_arr, 0, index - 1, is_less, &max))
         {
@@ -530,6 +535,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
+        // stop the process if the max frequency of all nodes is 1
         if (max.freq <= 1)
         {
             dyn_arr_free(node_arr);
@@ -537,6 +543,8 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             break;
         }
 
+        // add the max frequency pair to the pair array
+        // the index of this max frequency pair is it's pair ID
         pair_t new_pair = max.pair;
         if (!dyn_arr_set(pair_arr, next_symbol, &new_pair))
         {
@@ -546,6 +554,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             goto error_handling;
         }
 
+        // replace the max frequency pair in the text with it's pair ID
         int new_text_size = 0;
         for (int i = 0; i < text_size; i++)
         {
@@ -570,11 +579,23 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
         dyn_arr_free(node_arr);
         hash_table_destroy(table);
+
+        printf("\n\n");
+        printf("iteration %zu finished!\n", iteration);
+        printf("pair array length: %zu\n", pair_arr->last_index + 1);
+        printf("encoded text size: %d\n", text_size);
     }
 
     *encoding = text;
     *len = text_size;
     free(temp);
+
+    // resize the encoded text into it's requisite size
+    *encoding = realloc(*encoding, *len);
+    if (!encoding)
+    {
+        goto error_handling;
+    }
     return pair_arr;
 
 error_handling:
