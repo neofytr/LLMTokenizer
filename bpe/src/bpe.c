@@ -414,12 +414,6 @@ static size_t text_size;
 static hash_table_t *thread_tables[THREAD_NO];
 static pthread_t worker_threads[THREAD_NO] = {0};
 
-static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-static int ready = 0;
-static int current_iteration = 0;
-static int terminate = 0;
-
 static pthread_barrier_t barrier;
 
 #define CHUNK_SIZE (64 * 1024)
@@ -430,100 +424,77 @@ static pthread_mutex_t chunk_mutex = PTHREAD_MUTEX_INITIALIZER;
 static void *get_freq(void *arg)
 {
     size_t thread_idx = (size_t)arg;
-    int local_iteration = -1;
 
-    while (true)
+    pthread_barrier_wait(&barrier);
+
+    size_t adaptive_chunk_size;
+    pthread_mutex_lock(&chunk_mutex);
+    if (text_size < CHUNK_SIZE * THREAD_NO)
     {
-        // wait for main thread to signal start of new iteration
-        pthread_barrier_wait(&barrier);
+        size_t per_thread_len = text_size / THREAD_NO;
+        size_t start_index = thread_idx * per_thread_len;
+        size_t chunk_len = (thread_idx == THREAD_NO - 1) ? (per_thread_len + text_size % THREAD_NO) : per_thread_len;
 
-        pthread_mutex_lock(&mutex);
-        if (terminate)
+        if (chunk_len > 0)
         {
-            pthread_mutex_unlock(&mutex);
-            return (void *)1;
-        }
-        local_iteration = current_iteration;
-        pthread_mutex_unlock(&mutex);
-
-        // adaptive chunk size based on text size and thread count
-        size_t adaptive_chunk_size;
-        pthread_mutex_lock(&chunk_mutex);
-        // for small text sizes, revert to simple thread division
-        if (text_size < CHUNK_SIZE * THREAD_NO)
-        {
-            size_t per_thread_len = text_size / THREAD_NO;
-            size_t start_index = thread_idx * per_thread_len;
-            size_t chunk_len = (thread_idx == THREAD_NO - 1) ? (per_thread_len + text_size % THREAD_NO) : per_thread_len;
-
-            // process this chunk only if it has data
-            if (chunk_len > 0)
-            {
-                pthread_mutex_unlock(&chunk_mutex);
-
-                for (size_t i = start_index; i < start_index + chunk_len; i++)
-                {
-                    if (i + 1 >= text_size)
-                        break;
-
-                    pair_t pair = {text[i], text[i + 1]};
-                    size_t count = 0;
-
-                    hash_table_search(thread_tables[thread_idx], &pair, &count);
-                    count++;
-                    hash_table_insert(thread_tables[thread_idx], &pair, &count);
-                }
-            }
-            else
-            {
-                pthread_mutex_unlock(&chunk_mutex);
-            }
-        }
-        // for larger text sizes, use dynamic chunking
-        else
-        {
-            adaptive_chunk_size = CHUNK_SIZE;
             pthread_mutex_unlock(&chunk_mutex);
 
-            while (true)
+            for (size_t i = start_index; i < start_index + chunk_len; i++)
             {
-                // get next chunk to process
-                size_t start_index;
-                size_t chunk_len;
-
-                pthread_mutex_lock(&chunk_mutex);
-                start_index = next_chunk_index;
-                if (start_index >= text_size)
-                {
-                    // no more chunks available
-                    pthread_mutex_unlock(&chunk_mutex);
+                if (i + 1 >= text_size)
                     break;
-                }
 
-                // calculate chunk length (might be smaller for the last chunk)
-                chunk_len = (start_index + adaptive_chunk_size > text_size) ? (text_size - start_index) : adaptive_chunk_size;
+                pair_t pair = {text[i], text[i + 1]};
+                size_t count = 0;
 
-                // update next chunk index for other threads
-                next_chunk_index += chunk_len;
+                hash_table_search(thread_tables[thread_idx], &pair, &count);
+                count++;
+                hash_table_insert(thread_tables[thread_idx], &pair, &count);
+            }
+        }
+        else
+        {
+            pthread_mutex_unlock(&chunk_mutex);
+        }
+        pthread_barrier_wait(&barrier);
+    }
+    else
+    {
+        adaptive_chunk_size = CHUNK_SIZE;
+        pthread_mutex_unlock(&chunk_mutex);
+
+        while (true)
+        {
+            size_t start_index;
+            size_t chunk_len;
+
+            pthread_mutex_lock(&chunk_mutex);
+            start_index = next_chunk_index;
+            if (start_index >= text_size)
+            {
                 pthread_mutex_unlock(&chunk_mutex);
+                break;
+            }
 
-                // process current chunk
-                for (size_t i = start_index; i < start_index + chunk_len; i++)
-                {
-                    if (i + 1 >= text_size)
-                        break;
+            chunk_len = (start_index + adaptive_chunk_size > text_size) ? (text_size - start_index) : adaptive_chunk_size;
 
-                    pair_t pair = {text[i], text[i + 1]};
-                    size_t count = 0;
+            next_chunk_index += chunk_len;
+            pthread_mutex_unlock(&chunk_mutex);
 
-                    hash_table_search(thread_tables[thread_idx], &pair, &count);
-                    count++;
-                    hash_table_insert(thread_tables[thread_idx], &pair, &count);
-                }
+            for (size_t i = start_index; i < start_index + chunk_len; i++)
+            {
+                if (i + 1 >= text_size)
+                    break;
+
+                pair_t pair = {text[i], text[i + 1]};
+                size_t count = 0;
+
+                hash_table_search(thread_tables[thread_idx], &pair, &count);
+                count++;
+                hash_table_insert(thread_tables[thread_idx], &pair, &count);
             }
         }
 
-        // signal to the main thread that this thread is completed
         pthread_barrier_wait(&barrier);
     }
 
@@ -547,6 +518,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
     pthread_attr_t attr;
     dyn_arr_t *pair_arr = NULL;
     hash_table_t *table = NULL;
+    hash_table_t *new_table = NULL;
     bool threads_created = false;
 
     if (!path || !encoding || !len)
@@ -611,8 +583,8 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         }
     }
 
-#define PER_THREAD_TABLE_BUCKET_NUM (1U << 20)
-#define MERGED_TABLE_BUCKET_NUM (1U << 24)
+#define PER_THREAD_TABLE_BUCKET_NUM (1U << 12)
+#define MERGED_TABLE_BUCKET_NUM (1U << 18)
 
     for (size_t i = 0; i < THREAD_NO; i++)
     {
@@ -635,19 +607,19 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
 
     if (pthread_attr_init(&attr))
     {
-        dyn_arr_free(pair_arr);
-        free(text);
-        free(temp);
-        return NULL;
+        pthread_barrier_destroy(&barrier);
+        for (size_t i = 0; i < THREAD_NO; i++)
+            hash_table_destroy(thread_tables[i]);
+        goto error_handling;
     }
 
     if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_JOINABLE))
     {
         pthread_attr_destroy(&attr);
-        dyn_arr_free(pair_arr);
-        free(text);
-        free(temp);
-        return NULL;
+        pthread_barrier_destroy(&barrier);
+        for (size_t i = 0; i < THREAD_NO; i++)
+            hash_table_destroy(thread_tables[i]);
+        goto error_handling;
     }
 
     for (size_t i = 0; i < THREAD_NO; i++)
@@ -655,66 +627,55 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         if (pthread_create(&worker_threads[i], &attr, get_freq, (void *)i))
         {
             pthread_attr_destroy(&attr);
+            pthread_barrier_destroy(&barrier);
             for (size_t j = 0; j < i; j++)
             {
                 pthread_cancel(worker_threads[j]);
                 pthread_join(worker_threads[j], NULL);
             }
-            dyn_arr_free(pair_arr);
-            free(text);
-            free(temp);
-            return NULL;
+            for (size_t i = 0; i < THREAD_NO; i++)
+                hash_table_destroy(thread_tables[i]);
+            goto error_handling;
         }
     }
 
     threads_created = true;
     pthread_attr_destroy(&attr);
 
-    for (size_t iteration = 0;; iteration++)
+    pthread_mutex_lock(&chunk_mutex);
+    next_chunk_index = 0;
+    pthread_mutex_unlock(&chunk_mutex);
+
+    pthread_barrier_wait(&barrier);
+    pthread_barrier_wait(&barrier);
+
+    for (size_t i = 0; i < THREAD_NO; i++)
     {
-        printf("\n\niteration %zu\n", iteration);
+        void *status;
+        pthread_join(worker_threads[i], &status);
+    }
 
-        struct timespec begin;
+    table = hash_table_merge(thread_tables, THREAD_NO, val_add,
+                             sizeof(pair_t), sizeof(size_t), MERGED_TABLE_BUCKET_NUM);
 
-        PROFILE_BEGIN_TS(begin);
-
-        pthread_mutex_lock(&mutex);
-        current_iteration = iteration;
-        pthread_mutex_unlock(&mutex);
-
-        pthread_mutex_lock(&chunk_mutex);
-        next_chunk_index = 0; // reset the chunk index at the start of each iteration
-        pthread_mutex_unlock(&chunk_mutex);
-
-        // signal the threads to start this iteration
-        // this is a signal since all the other threads would be waiting on their first barrier for the main thread
-        // to cross the barrier and let them run
-        pthread_barrier_wait(&barrier);
-
-        // the main thread will wait on this barrier until all the others have completed, signalling main to
-        // continue it's execution
-        pthread_barrier_wait(&barrier);
-
-        PROFILE_END_TS(begin, "Frequency collection time");
-
-        table = hash_table_merge(thread_tables, THREAD_NO, val_add,
-                                 sizeof(pair_t), sizeof(size_t), MERGED_TABLE_BUCKET_NUM);
-
-        if (!table)
-        {
-            for (size_t i = 0; i < THREAD_NO; i++)
-                hash_table_destroy(thread_tables[i]);
-
-            goto error_handling;
-        }
-
+    if (!table)
+    {
         for (size_t i = 0; i < THREAD_NO; i++)
-            hash_table_clear(thread_tables[i]);
+            hash_table_destroy(thread_tables[i]);
+        pthread_barrier_destroy(&barrier);
+        goto error_handling;
+    }
 
+    for (size_t i = 0; i < THREAD_NO; i++)
+        hash_table_destroy(thread_tables[i]);
+
+    for (;;)
+    {
         dyn_arr_t *node_arr = dyn_arr_create(0, sizeof(pair_freq_t));
         if (!node_arr)
         {
             hash_table_destroy(table);
+            pthread_barrier_destroy(&barrier);
             goto error_handling;
         }
 
@@ -724,18 +685,19 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             node_t *curr = table->buckets[i];
             while (curr)
             {
-                pair_freq_t temp;
+                pair_freq_t pair_freq;
                 pair_t *pair = (pair_t *)curr->key;
                 size_t *freq = (size_t *)curr->value;
 
-                temp.pair.a = pair->a;
-                temp.pair.b = pair->b;
-                temp.freq = *freq;
+                pair_freq.pair.a = pair->a;
+                pair_freq.pair.b = pair->b;
+                pair_freq.freq = *freq;
 
-                if (!dyn_arr_set(node_arr, index++, &temp))
+                if (!dyn_arr_set(node_arr, index++, &pair_freq))
                 {
                     dyn_arr_free(node_arr);
                     hash_table_destroy(table);
+                    pthread_barrier_destroy(&barrier);
                     goto error_handling;
                 }
 
@@ -755,6 +717,7 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         {
             dyn_arr_free(node_arr);
             hash_table_destroy(table);
+            pthread_barrier_destroy(&barrier);
             goto error_handling;
         }
 
@@ -770,6 +733,16 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         {
             dyn_arr_free(node_arr);
             hash_table_destroy(table);
+            pthread_barrier_destroy(&barrier);
+            goto error_handling;
+        }
+
+        new_table = hash_table_create(MERGED_TABLE_BUCKET_NUM, sizeof(pair_t), sizeof(size_t));
+        if (!new_table)
+        {
+            dyn_arr_free(node_arr);
+            hash_table_destroy(table);
+            pthread_barrier_destroy(&barrier);
             goto error_handling;
         }
 
@@ -779,11 +752,41 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
             if (i < text_size - 1 && text[i] == new_pair.a && text[i + 1] == new_pair.b)
             {
                 temp[new_text_size++] = next_symbol;
+
+                if (new_text_size > 1)
+                {
+                    pair_t prev_pair = {temp[new_text_size - 2], next_symbol};
+                    size_t count = 0;
+                    hash_table_search(new_table, &prev_pair, &count);
+                    count++;
+                    hash_table_insert(new_table, &prev_pair, &count);
+                }
+
+                if (i + 2 < text_size)
+                {
+                    pair_t next_pair = {next_symbol, text[i + 2]};
+                    size_t count = 0;
+                    hash_table_search(new_table, &next_pair, &count);
+                    count++;
+                    hash_table_insert(new_table, &next_pair, &count);
+                }
+
                 i++;
             }
             else
             {
-                temp[new_text_size++] = text[i];
+                temp[new_text_size] = text[i];
+
+                if (new_text_size > 0)
+                {
+                    pair_t curr_pair = {temp[new_text_size - 1], temp[new_text_size]};
+                    size_t count = 0;
+                    hash_table_search(new_table, &curr_pair, &count);
+                    count++;
+                    hash_table_insert(new_table, &curr_pair, &count);
+                }
+
+                new_text_size++;
             }
         }
 
@@ -793,10 +796,13 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         text_size = new_text_size;
 
         next_symbol++;
-
         dyn_arr_free(node_arr);
         hash_table_destroy(table);
+        table = new_table;
+        new_table = NULL;
     }
+
+    pthread_barrier_destroy(&barrier);
 
     *encoding = text;
     *len = text_size;
@@ -809,44 +815,21 @@ dyn_arr_t *compress(const char *path, uint32_t **encoding, size_t *len)
         *encoding = reallocated_encoding;
     }
 
-    pthread_mutex_lock(&mutex);
-    terminate = 1;
-    pthread_mutex_unlock(&mutex);
-
-    pthread_barrier_wait(&barrier);
-
-    for (size_t i = 0; i < THREAD_NO; i++)
-    {
-        void *status;
-        pthread_join(worker_threads[i], &status);
-    }
-
-    for (size_t i = 0; i < THREAD_NO; i++)
-        hash_table_destroy(thread_tables[i]);
-
     return pair_arr;
 
 error_handling:
     if (threads_created)
     {
-        pthread_mutex_lock(&mutex);
-        terminate = 1;
-        pthread_mutex_unlock(&mutex);
-
-        pthread_barrier_wait(&barrier);
-
         for (size_t i = 0; i < THREAD_NO; i++)
         {
-            void *status;
-            if (worker_threads[i] != 0)
+            if (worker_threads[i])
             {
+                void *status;
+                pthread_cancel(worker_threads[i]);
                 pthread_join(worker_threads[i], &status);
             }
         }
     }
-
-    for (size_t i = 0; i < THREAD_NO; i++)
-        hash_table_destroy(thread_tables[i]);
 
     if (pair_arr)
         dyn_arr_free(pair_arr);
@@ -854,6 +837,11 @@ error_handling:
         free(text);
     if (temp)
         free(temp);
+    if (table)
+        hash_table_destroy(table);
+    if (new_table)
+        hash_table_destroy(new_table);
+
     *encoding = NULL;
     *len = 0;
     return NULL;
